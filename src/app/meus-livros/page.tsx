@@ -146,7 +146,7 @@ const MeusLivros = () => {
       }
     } catch (error) {
       console.error('Erro ao carregar livros:', error)
-      // We're not setting an error state here anymore
+      setErro('Ocorreu um erro ao carregar seus livros. Por favor, tente novamente.')
     }
   }
 
@@ -186,7 +186,7 @@ const MeusLivros = () => {
           id: item.id,
           titulo: item.volumeInfo.title,
           autor: item.volumeInfo.authors ? item.volumeInfo.authors.join(', ') : 'Autor desconhecido',
-          ano: new Date(item.volumeInfo.publishedDate).getFullYear(),
+          ano: item.volumeInfo.publishedDate ? new Date(item.volumeInfo.publishedDate).getFullYear() : 'Ano desconhecido',
           isbn: item.volumeInfo.industryIdentifiers?.find((id: any) => id.type === 'ISBN_13')?.identifier || 'ISBN desconhecido',
           amazonLink: `https://www.amazon.com/s?k=${encodeURIComponent(item.volumeInfo.title)}`,
           audibleLink: `https://www.audible.com/search?keywords=${encodeURIComponent(item.volumeInfo.title)}`,
@@ -219,7 +219,7 @@ const MeusLivros = () => {
       setModalAberto(true)
     } catch (error) {
       console.error('Erro ao carregar anotações:', error)
-      // We're not setting an error state here anymore
+      setErro('Ocorreu um erro ao carregar as anotações. Por favor, tente novamente.')
     }
   }
 
@@ -243,11 +243,10 @@ const MeusLivros = () => {
     }
   
     try {
-      // Remova a verificação de limite para usuários premium
       if (!user.isPremium) {
         const { count, error } = await supabase
           .from('user_books')
-          .select('*', { count: 'exact' })
+          .select('*', { count: 'exact', head: true })
           .eq('user_id', user.id)
   
         if (error) {
@@ -516,7 +515,7 @@ const MeusLivros = () => {
                 <h3 className="text-lg font-semibold">Suas Anotações:</h3>
                 <div className="max-h-40 overflow-y-auto">
                   {livroSelecionado.anotacoes.length > 0 ? (
-                    livroSelecionado.anotacoes.map((anotacao, index) => (
+                    livroSelecionado.anotacoes.map((anotacao) => (
                       <div key={anotacao.id} className="bg-gray-100 p-2 rounded mb-2">
                         <p>{anotacao.content}</p>
                         <p className="text-xs text-gray-500">

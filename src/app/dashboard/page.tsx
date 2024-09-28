@@ -1,7 +1,7 @@
 'use client'
 
 import { withAuth } from '@/Components/withAuth'
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import Image from 'next/image'
 import Navigation from '@/Components/Navigation'
 import { Button } from '../components/ui/button'
@@ -92,6 +92,120 @@ function Dashboard() {
 
   const supabase = createClientComponentClient()
 
+  const fetchCurrentBook = useCallback(async (userId: string): Promise<Book | null> => {
+    try {
+      const { data, error } = await supabase
+        .from('user_books')
+        .select(`
+          id,
+          progress,
+          books (
+            id,
+            title,
+            author,
+            year,
+            isbn,
+            amazon_link,
+            audible_link,
+            thumbnail,
+            description
+          )
+        `)
+        .eq('user_id', userId)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      
+      if (error) {
+        console.error('Erro ao buscar o livro atual:', error)
+        return null
+      }
+      
+      return data ? {
+        id: data.books.id,
+        title: data.books.title,
+        author: data.books.author,
+        year: data.books.year,
+        isbn: data.books.isbn,
+        amazon_link: data.books.amazon_link,
+        audible_link: data.books.audible_link,
+        thumbnail: data.books.thumbnail || '/placeholder.svg?height=200&width=150',
+        description: data.books.description || '',
+        progress: data.progress,
+        annotations: []
+      } : null
+    } catch (error) {
+      console.error('Error fetching current book:', error)
+      return null
+    }
+  }, [supabase])
+
+  const fetchRecentAnnotations = useCallback(async (userId: string): Promise<Annotation[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('annotations')
+        .select('id, content, created_at, updated_at, book_id')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(5)
+      
+      if (error) {
+        console.error('Erro ao buscar anotações recentes:', error)
+        return []
+      }
+      
+      return data || []
+    } catch (error) {
+      console.error('Error fetching recent annotations:', error)
+      return []
+    }
+  }, [supabase])
+
+  const fetchUserBooks = useCallback(async (userId: string): Promise<Book[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('user_books')
+        .select(`
+          id,
+          progress,
+          books (
+            id,
+            title,
+            author,
+            year,
+            isbn,
+            amazon_link,
+            audible_link,
+            thumbnail,
+            description
+          )
+        `)
+        .eq('user_id', userId)
+      
+      if (error) {
+        console.error('Erro ao buscar livros do usuário:', error)
+        return []
+      }
+      
+      return data.map(item => ({
+        id: item.books.id,
+        title: item.books.title,
+        author: item.books.author,
+        year: item.books.year,
+        isbn: item.books.isbn,
+        amazon_link: item.books.amazon_link,
+        audible_link: item.books.audible_link,
+        thumbnail: item.books.thumbnail || '/placeholder.svg?height=200&width=150',
+        description: item.books.description || '',
+        progress: item.progress,
+        annotations: []
+      }))
+    } catch (error) {
+      console.error('Error fetching user books:', error)
+      return []
+    }
+  }, [supabase])
+
   useEffect(() => {
     const fetchData = async (retryCount = 0) => {
       setIsLoading(true)
@@ -165,121 +279,7 @@ function Dashboard() {
     }
 
     fetchData()
-  }, [])
-
-  const fetchCurrentBook = async (userId: string): Promise<Book | null> => {
-    try {
-      const { data, error } = await supabase
-        .from('user_books')
-        .select(`
-          id,
-          progress,
-          books (
-            id,
-            title,
-            author,
-            year,
-            isbn,
-            amazon_link,
-            audible_link,
-            thumbnail,
-            description
-          )
-        `)
-        .eq('user_id', userId)
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      
-      if (error) {
-        console.error('Erro ao buscar o livro atual:', error)
-        return null
-      }
-      
-      return data ? {
-        id: data.books.id,
-        title: data.books.title,
-        author: data.books.author,
-        year: data.books.year,
-        isbn: data.books.isbn,
-        amazon_link: data.books.amazon_link,
-        audible_link: data.books.audible_link,
-        thumbnail: data.books.thumbnail || '/placeholder.svg?height=200&width=150',
-        description: data.books.description || '',
-        progress: data.progress,
-        annotations: []
-      } : null
-    } catch (error) {
-      console.error('Error fetching current book:', error)
-      return null
-    }
-  }
-
-  const fetchRecentAnnotations = async (userId: string): Promise<Annotation[]> => {
-    try {
-      const { data, error } = await supabase
-        .from('annotations')
-        .select('id, content, created_at, updated_at, book_id')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(5)
-      
-      if (error) {
-        console.error('Erro ao buscar anotações recentes:', error)
-        return []
-      }
-      
-      return data || []
-    } catch (error) {
-      console.error('Error fetching recent annotations:', error)
-      return []
-    }
-  }
-
-  const fetchUserBooks = async (userId: string): Promise<Book[]> => {
-    try {
-      const { data, error } = await supabase
-        .from('user_books')
-        .select(`
-          id,
-          progress,
-          books (
-            id,
-            title,
-            author,
-            year,
-            isbn,
-            amazon_link,
-            audible_link,
-            thumbnail,
-            description
-          )
-        `)
-        .eq('user_id', userId)
-      
-      if (error) {
-        console.error('Erro ao buscar livros do usuário:', error)
-        return []
-      }
-      
-      return data.map(item => ({
-        id: item.books.id,
-        title: item.books.title,
-        author: item.books.author,
-        year: item.books.year,
-        isbn: item.books.isbn,
-        amazon_link: item.books.amazon_link,
-        audible_link: item.books.audible_link,
-        thumbnail: item.books.thumbnail || '/placeholder.svg?height=200&width=150',
-        description: item.books.description || '',
-        progress: item.progress,
-        annotations: []
-      }))
-    } catch (error) {
-      console.error('Error fetching user books:', error)
-      return []
-    }
-  }
+  }, [fetchCurrentBook, fetchRecentAnnotations, fetchUserBooks, supabase])
 
   const openModal = (book: Book) => {
     setCurrentBook(book)
@@ -304,7 +304,7 @@ function Dashboard() {
     if (!user) return
 
     const today = new Date().toISOString().split('T')[0]
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('user_daily_messages')
       .upsert(
         { user_id: user.id, date: today, message_count: dailyMessageCount + 1 },
