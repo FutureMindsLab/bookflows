@@ -124,15 +124,15 @@ function Dashboard() {
       }
       
       return data ? {
-        id: data.books.id,
-        title: data.books.title,
-        author: data.books.author,
-        year: data.books.year,
-        isbn: data.books.isbn,
-        amazon_link: data.books.amazon_link,
-        audible_link: data.books.audible_link,
-        thumbnail: data.books.thumbnail || '/placeholder.svg?height=200&width=150',
-        description: data.books.description || '',
+        id: data.books[0].id,
+        title: data.books[0].title,
+        author: data.books[0].author,
+        year: data.books[0].year,
+        isbn: data.books[0].isbn,
+        amazon_link: data.books[0].amazon_link,
+        audible_link: data.books[0].audible_link,
+        thumbnail: data.books[0].thumbnail || '/placeholder.svg?height=200&width=150',
+        description: data.books[0].description || '',
         progress: data.progress,
         annotations: []
       } : null
@@ -190,15 +190,15 @@ function Dashboard() {
       }
       
       return data.map(item => ({
-        id: item.books.id,
-        title: item.books.title,
-        author: item.books.author,
-        year: item.books.year,
-        isbn: item.books.isbn,
-        amazon_link: item.books.amazon_link,
-        audible_link: item.books.audible_link,
-        thumbnail: item.books.thumbnail || '/placeholder.svg?height=200&width=150',
-        description: item.books.description || '',
+        id: item.books[0].id,
+        title: item.books[0].title,
+        author: item.books[0].author,
+        year: item.books[0].year,
+        isbn: item.books[0].isbn,
+        amazon_link: item.books[0].amazon_link,
+        audible_link: item.books[0].audible_link,
+        thumbnail: item.books[0].thumbnail || '/placeholder.svg?height=200&width=150',
+        description: item.books[0].description || '',
         progress: item.progress,
         annotations: []
       }))

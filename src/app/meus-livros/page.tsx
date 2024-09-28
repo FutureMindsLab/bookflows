@@ -86,7 +86,7 @@ const MeusLivros = () => {
       if (error) throw error
 
       if (data) {
-        const livrosCarregados = data.map(item => ({
+        const livrosCarregados = (data as any[]).map(item => ({
           id: item.books.id,
           titulo: item.books.title,
           autor: item.books.author,
@@ -255,7 +255,7 @@ const MeusLivros = () => {
           return
         }
   
-        if (count >= 2) {
+        if (count! >= 2) {
           setErro('Você é um usuário gratuito e já tem 2 livros adicionados. Delete um dos livros ou faça o upgrade para premium.')
           return
         }
