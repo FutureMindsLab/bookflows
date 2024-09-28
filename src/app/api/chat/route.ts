@@ -5,7 +5,6 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
 
-// Define a more specific type for the request body
 interface ChatRequest {
   messages: Array<OpenAI.Chat.ChatCompletionMessage>;
   bookId: string;

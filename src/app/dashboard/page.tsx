@@ -26,18 +26,20 @@ import OpenAI from 'openai'
 
 let openai: OpenAI | null = null;
 
-try {
-  if (!process.env.NEXT_PUBLIC_OPENAI_API_KEY) {
-    console.error('NEXT_PUBLIC_OPENAI_API_KEY is not set in the environment');
-  } else {
-    openai = new OpenAI({
-      apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY,
-      dangerouslyAllowBrowser: true
-    });
-    console.log('OpenAI client initialized successfully');
+if (typeof window !== 'undefined') {
+  try {
+    if (!process.env.NEXT_PUBLIC_OPENAI_API_KEY) {
+      console.error('NEXT_PUBLIC_OPENAI_API_KEY is not set in the environment');
+    } else {
+      openai = new OpenAI({
+        apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY,
+        dangerouslyAllowBrowser: true
+      });
+      console.log('OpenAI client initialized successfully');
+    }
+  } catch (error) {
+    console.error('Error initializing OpenAI client:', error);
   }
-} catch (error) {
-  console.error('Error initializing OpenAI client:', error);
 }
 
 interface Annotation {
