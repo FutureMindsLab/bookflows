@@ -114,9 +114,9 @@ function Dashboard() {
           )
         `)
         .eq('user_id', userId)
-        .order('updated_at', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(1)
-        .maybeSingle()
+        .single()
       
       if (error) {
         console.error('Erro ao buscar o livro atual:', error)
@@ -124,15 +124,15 @@ function Dashboard() {
       }
       
       return data ? {
-        id: data.books[0].id,
-        title: data.books[0].title,
-        author: data.books[0].author,
-        year: data.books[0].year,
-        isbn: data.books[0].isbn,
-        amazon_link: data.books[0].amazon_link,
-        audible_link: data.books[0].audible_link,
-        thumbnail: data.books[0].thumbnail || '/placeholder.svg?height=200&width=150',
-        description: data.books[0].description || '',
+        id: data.books.id,
+        title: data.books.title,
+        author: data.books.author,
+        year: data.books.year,
+        isbn: data.books.isbn,
+        amazon_link: data.books.amazon_link,
+        audible_link: data.books.audible_link,
+        thumbnail: data.books.thumbnail || '/placeholder.svg?height=200&width=150',
+        description: data.books.description || '',
         progress: data.progress,
         annotations: []
       } : null
@@ -190,15 +190,15 @@ function Dashboard() {
       }
       
       return data.map(item => ({
-        id: item.books[0].id,
-        title: item.books[0].title,
-        author: item.books[0].author,
-        year: item.books[0].year,
-        isbn: item.books[0].isbn,
-        amazon_link: item.books[0].amazon_link,
-        audible_link: item.books[0].audible_link,
-        thumbnail: item.books[0].thumbnail || '/placeholder.svg?height=200&width=150',
-        description: item.books[0].description || '',
+        id: item.books.id,
+        title: item.books.title,
+        author: item.books.author,
+        year: item.books.year,
+        isbn: item.books.isbn,
+        amazon_link: item.books.amazon_link,
+        audible_link: item.books.audible_link,
+        thumbnail: item.books.thumbnail || '/placeholder.svg?height=200&width=150',
+        description: item.books.description || '',
         progress: item.progress,
         annotations: []
       }))
@@ -349,7 +349,7 @@ function Dashboard() {
       const response = await openai.chat.completions.create({
         model: "gpt-3.5-turbo",
         messages: [
-          { role: "system", content: `Você é um assistente especializado em literatura. Você pode responder perguntas sobre o livro atual apenas se o usuário selecionou o livro. Em alguns momentos você pode agir como o autor do livro, caso o usuário pergunte sobre isso, você também pode responder como um personagem do livro, caso o usuário pergunte sobre isso. O contexto do livro atual é: ${context}` },
+          { role: "system", content: `Você é um assistente especializado em literatura. Você pode responder perguntas sobre o livro atual apenas se o usuário selecionou o livro. Você não pode falar de nenhum outro tópico que não tenha relação com o livro em questão. Porém, talvez existam temas que são abordados no livro que você pode trazer uma visão aprofundada em tópicos relacionados. Se lembre que você é um especialista em literatura, logo você pode ajudar em coisas gerais, só não desvie para tópicos que não tenham relação direta ou indireta com o livro. Por exemplo, um livro sobre negócios você responder coisas sobre ficção ou aventura. Em alguns momentos você pode agir como o autor do livro, caso o usuário pergunte sobre isso, você também pode responder como um personagem do livro, caso o usuário pergunte sobre isso. O contexto do livro atual é: ${context}` },
           ...updatedConversations[selectedBookId].messages
         ],
       })
