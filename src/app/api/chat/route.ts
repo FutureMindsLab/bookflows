@@ -7,7 +7,7 @@ const openai = new OpenAI({
 
 // Define a more specific type for the request body
 interface ChatRequest {
-  messages: OpenAI.Chat.ChatCompletionMessage[];
+  messages: Array<OpenAI.Chat.ChatCompletionMessage>;
   bookId: string;
 }
 
