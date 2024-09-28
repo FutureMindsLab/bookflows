@@ -1,7 +1,7 @@
 'use client'
 
 import { withAuth } from '@/Components/withAuth'
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import Navigation from '@/Components/Navigation'
@@ -56,50 +56,7 @@ const MeusLivros = () => {
   const router = useRouter()
   const supabase = createClientComponentClient()
 
-  useEffect(() => {
-    const checkUserAndLoadBooks = async () => {
-      try {
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-        if (sessionError) throw sessionError
-  
-        if (!session) {
-          router.push('/login')
-          return
-        }
-  
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('id, is_premium')
-          .eq('auth_id', session.user.id)
-          .single()
-  
-        if (userError) throw userError
-  
-        setUser({
-          id: userData.id,
-          isPremium: userData.is_premium
-        })
-        await carregarLivros(userData.id)
-      } catch (error) {
-        console.error('Error in checkUserAndLoadBooks:', error)
-        setErro('Ocorreu um erro ao carregar seus dados. Por favor, tente novamente.')
-      } finally {
-        setCarregando(false)
-      }
-    }
-  
-    checkUserAndLoadBooks()
-  }, [supabase, router])
-
-  useEffect(() => {
-    if (debouncedNovoLivroTitulo) {
-      buscarLivros(debouncedNovoLivroTitulo)
-    } else {
-      setSugestoes([])
-    }
-  }, [debouncedNovoLivroTitulo])
-
-  const carregarLivros = async (userId: string) => {
+  const carregarLivros = useCallback(async (userId: string) => {
     try {
       const { data, error } = await supabase
         .from('user_books')
@@ -148,60 +105,103 @@ const MeusLivros = () => {
       console.error('Erro ao carregar livros:', error)
       setErro('Ocorreu um erro ao carregar seus livros. Por favor, tente novamente.')
     }
-  }
+  }, [supabase])
 
-  const buscarLivros = async (query: string) => {
-    try {
-      // Primeiro, buscar na tabela books
-      const { data: booksData, error: booksError } = await supabase
-        .from('books')
-        .select('*')
-        .ilike('title', `%${query}%`)
-        .limit(5)
-
-      if (booksError) throw booksError
-
-      if (booksData && booksData.length > 0) {
-        setSugestoes(booksData.map(livro => ({
-          id: livro.id,
-          titulo: livro.title,
-          autor: livro.author,
-          ano: livro.year,
-          isbn: livro.isbn,
-          amazonLink: livro.amazon_link,
-          audibleLink: livro.audible_link,
-          thumbnail: livro.thumbnail || '/placeholder.svg?height=200&width=150',
-          descricao: livro.description || '',
-          progresso: 0,
-          anotacoes: []
-        })))
-      } else {
-        // Se não encontrar na tabela books, buscar na API do Google Books
-        const response = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}`)
-        if (!response.ok) {
-          throw new Error(`Erro na resposta da API: ${response.status} ${response.statusText}`)
+  useEffect(() => {
+    const checkUserAndLoadBooks = async () => {
+      try {
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+        if (sessionError) throw sessionError
+  
+        if (!session) {
+          router.push('/login')
+          return
         }
-        const data = await response.json()
-        const googleBooks = data.items.slice(0, 5).map((item: string) => ({
-          id: item.id,
-          titulo: item.volumeInfo.title,
-          autor: item.volumeInfo.authors ? item.volumeInfo.authors.join(', ') : 'Autor desconhecido',
-          ano: item.volumeInfo.publishedDate ? new Date(item.volumeInfo.publishedDate).getFullYear() : 'Ano desconhecido',
-          isbn: item.volumeInfo.industryIdentifiers?.find((id: string) => id.type === 'ISBN_13')?.identifier || 'ISBN desconhecido',
-          amazonLink: `https://www.amazon.com/s?k=${encodeURIComponent(item.volumeInfo.title)}`,
-          audibleLink: `https://www.audible.com/search?keywords=${encodeURIComponent(item.volumeInfo.title)}`,
-          thumbnail: item.volumeInfo.imageLinks?.thumbnail || '/placeholder.svg?height=200&width=150',
-          descricao: item.volumeInfo.description || 'Descrição não disponível',
-          progresso: 0,
-          anotacoes: []
-        }))
-        setSugestoes(googleBooks)
+  
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('id, is_premium')
+          .eq('auth_id', session.user.id)
+          .single()
+  
+        if (userError) throw userError
+  
+        setUser({
+          id: userData.id,
+          isPremium: userData.is_premium
+        })
+        await carregarLivros(userData.id)
+      } catch (error) {
+        console.error('Error in checkUserAndLoadBooks:', error)
+        setErro('Ocorreu um erro ao carregar seus dados. Por favor, tente novamente.')
+      } finally {
+        setCarregando(false)
       }
-    } catch (error) {
-      console.error('Erro ao buscar livros:', error)
-      setErro('Ocorreu um erro ao buscar livros. Por favor, tente novamente.')
     }
-  }
+  
+    checkUserAndLoadBooks()
+  }, [supabase, router, carregarLivros])
+
+  useEffect(() => {
+    const buscarLivros = async (query: string) => {
+      try {
+        // Primeiro, buscar na tabela books
+        const { data: booksData, error: booksError } = await supabase
+          .from('books')
+          .select('*')
+          .ilike('title', `%${query}%`)
+          .limit(5)
+  
+        if (booksError) throw booksError
+  
+        if (booksData && booksData.length > 0) {
+          setSugestoes(booksData.map(livro => ({
+            id: livro.id,
+            titulo: livro.title,
+            autor: livro.author,
+            ano: livro.year,
+            isbn: livro.isbn,
+            amazonLink: livro.amazon_link,
+            audibleLink: livro.audible_link,
+            thumbnail: livro.thumbnail || '/placeholder.svg?height=200&width=150',
+            descricao: livro.description || '',
+            progresso: 0,
+            anotacoes: []
+          })))
+        } else {
+          // Se não encontrar na tabela books, buscar na API do Google Books
+          const response = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}`)
+          if (!response.ok) {
+            throw new Error(`Erro na resposta da API: ${response.status} ${response.statusText}`)
+          }
+          const data = await response.json()
+          const googleBooks = data.items.slice(0, 5).map((item: any) => ({
+            id: item.id,
+            titulo: item.volumeInfo.title,
+            autor: item.volumeInfo.authors ? item.volumeInfo.authors.join(', ') : 'Autor desconhecido',
+            ano: item.volumeInfo.publishedDate ? new Date(item.volumeInfo.publishedDate).getFullYear() : 'Ano desconhecido',
+            isbn: item.volumeInfo.industryIdentifiers?.find((id: any) => id.type === 'ISBN_13')?.identifier || 'ISBN desconhecido',
+            amazonLink: `https://www.amazon.com/s?k=${encodeURIComponent(item.volumeInfo.title)}`,
+            audibleLink: `https://www.audible.com/search?keywords=${encodeURIComponent(item.volumeInfo.title)}`,
+            thumbnail: item.volumeInfo.imageLinks?.thumbnail || '/placeholder.svg?height=200&width=150',
+            descricao: item.volumeInfo.description || 'Descrição não disponível',
+            progresso: 0,
+            anotacoes: []
+          }))
+          setSugestoes(googleBooks)
+        }
+      } catch (error) {
+        console.error('Erro ao buscar livros:', error)
+        setErro('Ocorreu um erro ao buscar livros. Por favor, tente novamente.')
+      }
+    }
+
+    if (debouncedNovoLivroTitulo) {
+      buscarLivros(debouncedNovoLivroTitulo)
+    } else {
+      setSugestoes([])
+    }
+  }, [debouncedNovoLivroTitulo, supabase])
 
   const abrirModal = async (livro: Livro) => {
     try {
