@@ -5,12 +5,18 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
 
+// Define a more specific type for the request body
+interface ChatRequest {
+  messages: OpenAI.Chat.ChatCompletionMessage[];
+  bookId: string;
+}
+
 export async function POST(req: Request) {
   if (!process.env.OPENAI_API_KEY) {
     return NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 500 })
   }
 
-  const { messages, bookId }: { messages: OpenAI.Chat.ChatCompletionMessage[], bookId: string } = await req.json()
+  const { messages, bookId }: ChatRequest = await req.json()
 
   try {
     const completion = await openai.chat.completions.create({
