@@ -51,17 +51,30 @@ interface Annotation {
 }
 
 interface Book {
-  id: string
-  title: string
-  author: string
-  year: number
-  isbn: string
-  amazon_link: string
-  audible_link: string
-  thumbnail: string
-  description: string
-  progress: number
-  annotations: Annotation[]
+  id: string;
+  title: string;
+  author: string;
+  year: number | null;
+  isbn: string | null;
+  amazon_link: string | null;
+  audible_link: string | null;
+  thumbnail: string | null;
+  description: string | null;
+  insights: string | null;
+}
+
+interface UserBook {
+  id: string;
+  user_id: string;
+  book_id: string;
+  progress: number;
+  status: string | null;
+  book: Book;
+}
+
+interface BookWithProgress extends Book {
+  progress: number;
+  annotations: Annotation[];
 }
 
 
@@ -74,6 +87,8 @@ interface User {
   id: string
   isPremium: boolean
 }
+
+
 
 function Dashboard() {
   const [currentBook, setCurrentBook] = useState<Book | null>(null)
@@ -95,14 +110,14 @@ function Dashboard() {
 
   const supabase = createClientComponentClient()
 
-  const fetchCurrentBook = useCallback(async (userId: string): Promise<Book | null> => {
+  const fetchCurrentBook = useCallback(async (userId: string): Promise<BookWithProgress | null> => {
     try {
       const { data, error } = await supabase
         .from('user_books')
         .select(`
           id,
           progress,
-          books (
+          book:books (
             id,
             title,
             author,
@@ -111,7 +126,8 @@ function Dashboard() {
             amazon_link,
             audible_link,
             thumbnail,
-            description
+            description,
+            insights
           )
         `)
         .eq('user_id', userId)
@@ -124,19 +140,23 @@ function Dashboard() {
         return null
       }
       
-      return data ? {
-        id: data.books.id,
-        title: data.books.title,
-        author: data.books.author,
-        year: data.books.year,
-        isbn: data.books.isbn,
-        amazon_link: data.books.amazon_link,
-        audible_link: data.books.audible_link,
-        thumbnail: data.books.thumbnail || '/placeholder.svg?height=200&width=150',
-        description: data.books.description || '',
-        progress: data.progress,
-        annotations: []
-      } : null
+      if (data && data.book) {
+        return {
+          id: data.book.id,
+          title: data.book.title,
+          author: data.book.author,
+          year: data.book.year,
+          isbn: data.book.isbn,
+          amazon_link: data.book.amazon_link,
+          audible_link: data.book.audible_link,
+          thumbnail: data.book.thumbnail || '/placeholder.svg?height=200&width=150',
+          description: data.book.description || '',
+          insights: data.book.insights || '',
+          progress: data.progress,
+          annotations: []
+        }
+      }
+      return null
     } catch (error) {
       console.error('Error fetching current book:', error)
       return null
@@ -170,8 +190,11 @@ function Dashboard() {
         .from('user_books')
         .select(`
           id,
+          user_id,
+          book_id,
           progress,
-          books (
+          status,
+          book:books (
             id,
             title,
             author,
@@ -190,19 +213,21 @@ function Dashboard() {
         return []
       }
       
-      return data.map(item => ({
-        id: item.books.id,
-        title: item.books.title,
-        author: item.books.author,
-        year: item.books.year,
-        isbn: item.books.isbn,
-        amazon_link: item.books.amazon_link,
-        audible_link: item.books.audible_link,
-        thumbnail: item.books.thumbnail || '/placeholder.svg?height=200&width=150',
-        description: item.books.description || '',
+      if (!data) return []
+  
+      return (data as UserBook[]).map((item) => ({
+        id: item.book.id,
+        title: item.book.title,
+        author: item.book.author,
+        year: item.book.year || 0,
+        isbn: item.book.isbn || '',
+        amazon_link: item.book.amazon_link || '',
+        audible_link: item.book.audible_link || '',
+        thumbnail: item.book.thumbnail || '/placeholder.svg?height=200&width=150',
+        description: item.book.description || '',
         progress: item.progress,
         annotations: []
-      }))
+      }));
     } catch (error) {
       console.error('Error fetching user books:', error)
       return []
