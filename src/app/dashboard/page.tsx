@@ -50,7 +50,7 @@ interface Annotation {
   book_id: string
 }
 
-interface BookData {
+interface Book {
   id: string
   title: string
   author: string
@@ -58,30 +58,12 @@ interface BookData {
   isbn: string
   amazon_link: string
   audible_link: string
-  thumbnail: string | null
-  description: string | null
-}
-
-interface UserBookData {
-  id: string
-  progress: number
-  books: {
-    id: string
-    title: string
-    author: string
-    year: number
-    isbn: string
-    amazon_link: string
-    audible_link: string
-    thumbnail: string | null
-    description: string | null
-  }
-}
-
-interface Book extends BookData {
+  thumbnail: string
+  description: string
   progress: number
   annotations: Annotation[]
 }
+
 
 interface Conversation {
   bookId: string
@@ -142,16 +124,19 @@ function Dashboard() {
         return null
       }
       
-      if (data && data.books) {
-        return {
-          ...data.books,
-          progress: data.progress,
-          thumbnail: data.books.thumbnail || '/placeholder.svg?height=200&width=150',
-          description: data.books.description || '',
-          annotations: []
-        }
-      }
-      return null
+      return data ? {
+        id: data.books.id,
+        title: data.books.title,
+        author: data.books.author,
+        year: data.books.year,
+        isbn: data.books.isbn,
+        amazon_link: data.books.amazon_link,
+        audible_link: data.books.audible_link,
+        thumbnail: data.books.thumbnail || '/placeholder.svg?height=200&width=150',
+        description: data.books.description || '',
+        progress: data.progress,
+        annotations: []
+      } : null
     } catch (error) {
       console.error('Error fetching current book:', error)
       return null
@@ -205,11 +190,17 @@ function Dashboard() {
         return []
       }
       
-      return (data as UserBookData[]).map(item => ({
-        ...item.books,
-        progress: item.progress,
+      return data.map(item => ({
+        id: item.books.id,
+        title: item.books.title,
+        author: item.books.author,
+        year: item.books.year,
+        isbn: item.books.isbn,
+        amazon_link: item.books.amazon_link,
+        audible_link: item.books.audible_link,
         thumbnail: item.books.thumbnail || '/placeholder.svg?height=200&width=150',
         description: item.books.description || '',
+        progress: item.progress,
         annotations: []
       }))
     } catch (error) {
