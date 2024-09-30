@@ -2,38 +2,26 @@ import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
 
 const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-  });
-
-interface ChatRequest {
-  messages: Array<OpenAI.Chat.ChatCompletionMessage>;
-  bookId: string;
-}
+  apiKey: process.env.OPENAI_API_KEY
+})
 
 export async function POST(req: Request) {
-  if (!process.env.OPENAI_API_KEY) {
-    return NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 500 })
-  }
-
-  const { messages, bookId }: ChatRequest = await req.json()
+  const { messages, bookTitle, bookAuthor } = await req.json()
 
   try {
     const completion = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
+      model: "gpt-3.5-turbo",
       messages: [
-        { role: 'system', content: `You are a helpful assistant that discusses books. The current book being discussed has the ID: ${bookId}.` },
+        { role: "system", content: `You are an AI assistant specialized in discussing the book "${bookTitle}" by ${bookAuthor}. Provide insightful answers and engage in meaningful conversations about this book. You can act as a reader, a writer, or a critic, depending on the user's question, but you can also be the author or even a character from the book. You can also be a friend, a teacher, or a stranger, depending on the user's question.` },
         ...messages
-      ],
+      ]
     })
 
-    return NextResponse.json({ response: completion.choices[0].message.content })
+    const aiMessage = completion.choices[0].message.content
+
+    return NextResponse.json({ message: aiMessage })
   } catch (error) {
-    if (error instanceof OpenAI.APIError) {
-      console.error(error.status, error.message)
-      return NextResponse.json({ error: error.message }, { status: error.status })
-    } else {
-      console.error(`Error with OpenAI API request: ${error}`)
-      return NextResponse.json({ error: 'An error occurred during your request.' }, { status: 500 })
-    }
+    console.error('OpenAI API error:', error)
+    return NextResponse.json({ error: 'Failed to get response from OpenAI' }, { status: 500 })
   }
 }

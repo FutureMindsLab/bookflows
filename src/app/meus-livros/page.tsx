@@ -21,20 +21,21 @@ interface Annotation {
   content: string
   created_at: string
   updated_at: string
+  user_book_id: string
 }
 
 interface Livro {
   id: string
-  titulo: string
-  autor: string
-  ano: number
-  isbn: string
-  amazonLink: string
-  audibleLink: string
+  title: string
+  author: string
+  year: number | null
+  isbn: string | null
+  amazon_link: string | null
+  audible_link: string | null
   thumbnail: string
-  descricao: string
-  progresso: number
-  anotacoes: Annotation[]
+  description: string
+  progress: number
+  annotations: Annotation[]
 }
 
 interface User {
@@ -42,7 +43,7 @@ interface User {
   isPremium: boolean
 }
 
-const MeusLivros = () => {
+const MeusLivros: React.FC = () => {
   const [livros, setLivros] = useState<Livro[]>([])
   const [modalAberto, setModalAberto] = useState(false)
   const [livroSelecionado, setLivroSelecionado] = useState<Livro | null>(null)
@@ -56,14 +57,110 @@ const MeusLivros = () => {
   const router = useRouter()
   const supabase = createClientComponentClient()
 
+  const checkUserTable = async () => {
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, auth_id, is_premium')
+      .limit(1)
+
+    if (error) {
+      console.error('Error checking users table:', error)
+      return
+    }
+
+    console.log('Users table structure:', data)
+  }
+
+  const checkUserAndLoadBooks = async () => {
+    try {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError) throw sessionError
+  
+      if (!session) {
+        console.log('No session found, redirecting to login')
+        router.push('/login')
+        return
+      }
+  
+      console.log('Session user ID:', session.user.id)
+  
+      let userData
+      const { data, error: userError } = await supabase
+        .from('users')
+        .select('id, auth_id, is_premium')
+        .eq('auth_id', session.user.id)
+        .single()
+  
+      if (userError) {
+        console.error('Error fetching user data:', userError)
+        setErro('Ocorreu um erro ao carregar seus dados. Por favor, tente novamente.')
+        return
+      }
+  
+      if (!data) {
+        console.log('User not found in users table')
+        // Instead of redirecting, let's try to create the user
+        const { data: newUser, error: createError } = await supabase
+          .from('users')
+          .insert({ auth_id: session.user.id, is_premium: false })
+          .select()
+          .single()
+  
+        if (createError) {
+          console.error('Error creating new user:', createError)
+          setErro('Não foi possível criar um novo usuário. Por favor, contate o suporte.')
+          return
+        }
+  
+        console.log('New user created:', newUser)
+        userData = newUser
+      } else {
+        userData = data
+      }
+  
+      console.log('User data:', userData)
+  
+      setUser({
+        id: userData.id,
+        isPremium: userData.is_premium
+      })
+  
+      await carregarLivros(userData.id)
+    } catch (error) {
+      console.error('Error in checkUserAndLoadBooks:', error)
+      setErro('Ocorreu um erro ao carregar seus dados. Por favor, tente novamente.')
+    } finally {
+      setCarregando(false)
+    }
+  }
+
   const carregarLivros = useCallback(async (userId: string) => {
     try {
-      const { data, error } = await supabase
+      // Step 1: Fetch user_books info and annotations
+      const { data: userBooksData, error: userBooksError } = await supabase
         .from('user_books')
         .select(`
           id,
+          book_id,
           progress,
-          books (
+          annotations (id, content, created_at, updated_at, user_book_id)
+        `)
+        .eq('user_id', userId)
+        .eq('status', true)
+      
+  
+      if (userBooksError) throw userBooksError
+  
+      if (!userBooksData || userBooksData.length === 0) {
+        setLivros([])
+        return
+      }
+  
+      // Step 2: Fetch book information for each user_book
+      const bookPromises = userBooksData.map(async (userBook) => {
+        const { data: bookData, error: bookError } = await supabase
+          .from('books')
+          .select(`
             id,
             title,
             author,
@@ -73,34 +170,30 @@ const MeusLivros = () => {
             audible_link,
             thumbnail,
             description
-          ),
-          annotations (
-            id,
-            content,
-            created_at,
-            updated_at
-          )
-        `)
-        .eq('user_id', userId)
-      
-      if (error) throw error
-
-      if (data) {
-        const livrosCarregados = data.map(item => ({
-          id: item.books.id,
-          titulo: item.books.title,
-          autor: item.books.author,
-          ano: item.books.year,
-          isbn: item.books.isbn,
-          amazonLink: item.books.amazon_link,
-          audibleLink: item.books.audible_link,
-          thumbnail: item.books.thumbnail || '/placeholder.svg?height=200&width=150',
-          descricao: item.books.description || '',
-          progresso: item.progress,
-          anotacoes: item.annotations || []
-        }))
-        setLivros(livrosCarregados)
-      }
+          `)
+          .eq('id', userBook.book_id)
+          .single()
+  
+        if (bookError) throw bookError
+  
+        return {
+          id: userBook.id,
+          book_id: bookData.id,
+          title: bookData.title,
+          author: bookData.author,
+          year: bookData.year,
+          isbn: bookData.isbn,
+          amazon_link: bookData.amazon_link,
+          audible_link: bookData.audible_link,
+          thumbnail: bookData.thumbnail || '/placeholder.svg?height=200&width=150',
+          description: bookData.description || '',
+          progress: userBook.progress,
+          annotations: userBook.annotations || []
+        }
+      })
+  
+      const livrosCarregados = await Promise.all(bookPromises)
+      setLivros(livrosCarregados)
     } catch (error) {
       console.error('Erro ao carregar livros:', error)
       setErro('Ocorreu um erro ao carregar seus livros. Por favor, tente novamente.')
@@ -108,85 +201,54 @@ const MeusLivros = () => {
   }, [supabase])
 
   useEffect(() => {
-    const checkUserAndLoadBooks = async () => {
-      try {
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-        if (sessionError) throw sessionError
-  
-        if (!session) {
-          router.push('/login')
-          return
-        }
-  
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('id, is_premium')
-          .eq('auth_id', session.user.id)
-          .single()
-  
-        if (userError) throw userError
-  
-        setUser({
-          id: userData.id,
-          isPremium: userData.is_premium
-        })
-        await carregarLivros(userData.id)
-      } catch (error) {
-        console.error('Error in checkUserAndLoadBooks:', error)
-        setErro('Ocorreu um erro ao carregar seus dados. Por favor, tente novamente.')
-      } finally {
-        setCarregando(false)
-      }
-    }
-  
+    checkUserTable()
     checkUserAndLoadBooks()
-  }, [supabase, router, carregarLivros])
+  }, [])
 
   useEffect(() => {
     const buscarLivros = async (query: string) => {
       try {
-        // Primeiro, buscar na tabela books
         const { data: booksData, error: booksError } = await supabase
           .from('books')
           .select('*')
           .ilike('title', `%${query}%`)
           .limit(5)
-  
+
         if (booksError) throw booksError
-  
+
         if (booksData && booksData.length > 0) {
           setSugestoes(booksData.map(livro => ({
             id: livro.id,
-            titulo: livro.title,
-            autor: livro.author,
-            ano: livro.year,
+            title: livro.title,
+            author: livro.author,
+            year: livro.year,
             isbn: livro.isbn,
-            amazonLink: livro.amazon_link,
-            audibleLink: livro.audible_link,
+            amazon_link: livro.amazon_link,
+            audible_link: livro.audible_link,
             thumbnail: livro.thumbnail || '/placeholder.svg?height=200&width=150',
-            descricao: livro.description || '',
-            progresso: 0,
-            anotacoes: []
+            description: livro.description || '',
+            progress: 0,
+            annotations: []
           })))
         } else {
-          // Se não encontrar na tabela books, buscar na API do Google Books
+          // If not found in books table, search Google Books API
           const response = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}`)
           if (!response.ok) {
-            throw new Error(`Erro na resposta da API: ${response.status} ${response.statusText}`)
+            throw new Error(`API response error: ${response.status} ${response.statusText}`)
           }
           const data = await response.json()
           const googleBooks = data.items.slice(0, 5).map((item: any) => ({
             id: item.id,
-            titulo: item.volumeInfo.title,
-            autor: item.volumeInfo.authors ? item.volumeInfo.authors.join(', ') : 'Autor desconhecido',
-            ano: item.volumeInfo.publishedDate ? new Date(item.volumeInfo.publishedDate).getFullYear() : 'Ano desconhecido',
-            isbn: item.volumeInfo.industryIdentifiers?.find((id: any) => id.type === 'ISBN_13')?.identifier || 'ISBN desconhecido',
-            amazonLink: `https://www.amazon.com/s?k=${encodeURIComponent(item.volumeInfo.title)}`,
-            audibleLink: `https://www.audible.com/search?keywords=${encodeURIComponent(item.volumeInfo.title)}`,
+            title: item.volumeInfo.title,
+            author: item.volumeInfo.authors ? item.volumeInfo.authors.join(', ') : 'Unknown Author',
+            year: item.volumeInfo.publishedDate ? new Date(item.volumeInfo.publishedDate).getFullYear() : null,
+            isbn: item.volumeInfo.industryIdentifiers?.find((id: any) => id.type === 'ISBN_13')?.identifier || null,
+            amazon_link: `https://www.amazon.com/s?k=${encodeURIComponent(item.volumeInfo.title)}`,
+            audible_link: `https://www.audible.com/search?keywords=${encodeURIComponent(item.volumeInfo.title)}`,
             thumbnail: item.volumeInfo.imageLinks?.thumbnail || '/placeholder.svg?height=200&width=150',
-            descricao: item.volumeInfo.description || 'Descrição não disponível',
-            progresso: 0,
-            anotacoes: []
+            description: item.volumeInfo.description || '',
+            progress: 0,
+            annotations: []
           }))
           setSugestoes(googleBooks)
         }
@@ -208,12 +270,12 @@ const MeusLivros = () => {
       const { data: annotations, error } = await supabase
         .from('annotations')
         .select('*')
-        .eq('book_id', livro.id)
+        .eq('user_book_id', livro.id)
         .order('created_at', { ascending: false })
 
       if (error) throw error
 
-      const livroAtualizado = { ...livro, anotacoes: annotations || [] }
+      const livroAtualizado = { ...livro, annotations: annotations || [] }
       setLivroSelecionado(livroAtualizado)
       setNovaAnotacao('')
       setModalAberto(true)
@@ -237,87 +299,154 @@ const MeusLivros = () => {
   }
 
   const adicionarLivro = async (livro: Livro) => {
-    if (!user) {
-      setErro('Você precisa estar logado para adicionar livros.')
-      return
-    }
-  
-    try {
-      if (!user.isPremium) {
-        const { count, error } = await supabase
-          .from('user_books')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id)
-  
-        if (error) {
-          console.error('Erro ao contar livros do usuário:', error)
-          setErro('Ocorreu um erro ao verificar seus livros. Por favor, tente novamente.')
-          return
-        }
-  
-        if (count >= 2) {
-          setErro('Você é um usuário gratuito e já tem 2 livros adicionados. Delete um dos livros ou faça o upgrade para premium.')
-          return
-        }
-      }
-  
-      let bookId = livro.id
-  
-      // Verificar se o livro já existe na tabela books
-      const { data: existingBook, error: existingBookError } = await supabase
-        .from('books')
-        .select('id')
-        .eq('isbn', livro.isbn)
-        .single()
-  
-      if (existingBookError && existingBookError.code !== 'PGRST116') {
-        throw existingBookError
-      }
-  
-      if (!existingBook) {
-        // Se o livro não existe, inserir na tabela books
-        const { data: newBook, error: newBookError } = await supabase
-          .from('books')
-          .insert({
-            title: livro.titulo,
-            author: livro.autor,
-            year: livro.ano,
-            isbn: livro.isbn,
-            amazon_link: livro.amazonLink,
-            audible_link: livro.audibleLink,
-            thumbnail: livro.thumbnail,
-            description: livro.descricao
-          })
-          .select()
-          .single()
-  
-        if (newBookError) throw newBookError
-        bookId = newBook.id
-      } else {
-        bookId = existingBook.id
-      }
-  
-      // Adicionar o livro à tabela user_books
-      const { error: userBookError } = await supabase
-        .from('user_books')
-        .insert({
-          user_id: user.id,
-          book_id: bookId,
-          progress: 0
-        })
-  
-      if (userBookError) throw userBookError
-  
-      await carregarLivros(user.id)
-      setNovoLivroTitulo('')
-      setSugestoes([])
-    } catch (error) {
-      console.error('Erro ao adicionar livro:', error)
-      setErro('Ocorreu um erro ao adicionar o livro. Por favor, tente novamente.')
-    }
+  if (!user) {
+    setErro('Você precisa estar logado para adicionar livros.')
+    return
   }
 
-  const adicionarAnotacao = async (bookId: string, content: string) => {
+  try {
+    // First, check if the user exists in the users table
+    let userData
+    const { data, error: userError } = await supabase
+      .from('users')
+      .select('id, is_premium')
+      .eq('id', user.id)
+      .single()
+
+    if (userError && userError.code === 'PGRST116') {
+      // User not found, create a new user record
+      const { data: newUser, error: createError } = await supabase
+        .from('users')
+        .insert({ id: user.id, is_premium: false })
+        .select()
+        .single()
+
+      if (createError) {
+        console.error('Error creating new user:', createError)
+        setErro('Ocorreu um erro ao criar seu perfil. Por favor, tente novamente.')
+        return
+      }
+
+      userData = newUser
+    } else if (userError) {
+      console.error('Error fetching user data:', userError)
+      setErro('Ocorreu um erro ao verificar seus dados. Por favor, tente novamente.')
+      return
+    } else {
+      userData = data
+    }
+
+    if (!userData) {
+      setErro('Usuário não encontrado. Por favor, faça login novamente.')
+      return
+    }
+
+    // Continue with the existing logic to check premium status and book count
+    if (!userData.is_premium) {
+      const { count, error } = await supabase
+        .from('user_books')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userData.id)
+        .eq('status', true)
+
+      if (error) {
+        console.error('Erro ao contar livros do usuário:', error)
+        setErro('Ocorreu um erro ao verificar seus livros. Por favor, tente novamente.')
+        return
+      }
+
+      const bookCount = count ?? 0
+
+      if (bookCount >= 2) {
+        setErro('Você é um usuário gratuito e já tem 2 livros adicionados. Delete um dos livros ou faça o upgrade para premium.')
+        return
+      }
+    }
+
+    // Check if the book already exists in the books table
+    let bookId = livro.id
+    const { data: existingBook, error: existingBookError } = await supabase
+      .from('books')
+      .select('id')
+      .eq('title', livro.title)
+      .eq('author', livro.author)
+      .single()
+
+    if (existingBookError && existingBookError.code !== 'PGRST116') {
+      throw existingBookError
+    }
+
+    if (!existingBook) {
+      // If the book doesn't exist, insert it into the books table
+      const { data: newBook, error: insertBookError } = await supabase
+        .from('books')
+        .insert({
+          title: livro.title,
+          author: livro.author,
+          year: livro.year,
+          isbn: livro.isbn,
+          amazon_link: livro.amazon_link,
+          audible_link: livro.audible_link,
+          thumbnail: livro.thumbnail,
+          description: livro.description
+        })
+        .select()
+
+      if (insertBookError) throw insertBookError
+      bookId = newBook[0].id
+    } else {
+      bookId = existingBook.id
+    }
+
+    // Check if the user already has this book
+    const { data: existingUserBook, error: existingUserBookError } = await supabase
+      .from('user_books')
+      .select('id, status')
+      .eq('user_id', userData.id)
+      .eq('book_id', bookId)
+      .single()
+
+    if (existingUserBookError && existingUserBookError.code !== 'PGRST116') {
+      throw existingUserBookError
+    }
+
+    if (existingUserBook) {
+      if (existingUserBook.status) {
+        setErro('Este livro já está na sua lista.')
+        return
+      } else {
+        // If the book exists but is inactive, reactivate it
+        const { error: updateError } = await supabase
+          .from('user_books')
+          .update({ status: true })
+          .eq('id', existingUserBook.id)
+
+        if (updateError) throw updateError
+      }
+    } else {
+      // If the user doesn't have this book, add it to user_books
+      const { error: insertError } = await supabase
+        .from('user_books')
+        .insert({
+          user_id: userData.id,
+          book_id: bookId,
+          progress: 0,
+          status: true
+        })
+
+      if (insertError) throw insertError
+    }
+
+    await carregarLivros(userData.id)
+    setNovoLivroTitulo('')
+    setSugestoes([])
+  } catch (error) {
+    console.error('Erro ao adicionar livro:', error)
+    setErro('Ocorreu um erro ao adicionar o livro. Por favor, tente novamente.')
+  }
+}
+
+  const adicionarAnotacao = async (userBookId: string, content: string) => {
     if (!user) return
 
     try {
@@ -325,7 +454,7 @@ const MeusLivros = () => {
         .from('annotations')
         .insert({
           user_id: user.id,
-          book_id: bookId,
+          user_book_id: userBookId,
           content: content
         })
         .select()
@@ -334,12 +463,12 @@ const MeusLivros = () => {
 
       if (data) {
         const livrosAtualizados = livros.map(livro => 
-          livro.id === bookId ? { ...livro, anotacoes: [data[0], ...livro.anotacoes] } : livro
+          livro.id === userBookId ? { ...livro, annotations: [data[0], ...livro.annotations] } : livro
         )
         setLivros(livrosAtualizados)
         
-        if (livroSelecionado && livroSelecionado.id === bookId) {
-          setLivroSelecionado({ ...livroSelecionado, anotacoes: [data[0], ...livroSelecionado.anotacoes] })
+        if (livroSelecionado && livroSelecionado.id === userBookId) {
+          setLivroSelecionado({ ...livroSelecionado, annotations: [data[0], ...livroSelecionado.annotations] })
         }
         setNovaAnotacao('')
       }
@@ -355,9 +484,9 @@ const MeusLivros = () => {
     try {
       const { error } = await supabase
         .from('user_books')
-        .delete()
+        .update({ status: false })
         .eq('user_id', user.id)
-        .eq('book_id', id)
+        .eq('id', id)
 
       if (error) throw error
 
@@ -369,8 +498,8 @@ const MeusLivros = () => {
   }
 
   const ouvirResumo = (livro: Livro) => {
-    console.log(`Ouvindo resumo de ${livro.titulo}`)
-    // Implementar lógica de texto para fala aqui
+    console.log(`Ouvindo resumo de ${livro.title}`)
+    // Implement text-to-speech logic here
   }
 
   if (carregando) {
@@ -417,10 +546,10 @@ const MeusLivros = () => {
                     onClick={() => adicionarLivro(livro)}
                     role="button"
                     tabIndex={0}
-                    aria-label={`Adicionar ${livro.titulo}`}
+                    aria-label={`Adicionar ${livro.title}`}
                   >
-                    <p className="font-semibold">{livro.titulo}</p>
-                    <p className="text-sm text-gray-600">{livro.autor}</p>
+                    <p className="font-semibold">{livro.title}</p>
+                    <p className="text-sm text-gray-600">{livro.author}</p>
                   </div>
                 ))}
               </div>
@@ -439,23 +568,23 @@ const MeusLivros = () => {
                 {livros.map(livro => (
                   <Card key={livro.id} className="relative hover:shadow-lg transition-shadow duration-200 cursor-pointer" onClick={() => abrirModal(livro)}>
                     <CardHeader>
-                      <CardTitle>{livro.titulo}</CardTitle>
+                      <CardTitle>{livro.title}</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="flex items-center space-x-4">
                         <div className="relative w-20 h-30">
                           <Image 
                             src={livro.thumbnail} 
-                            alt={livro.titulo} 
+                            alt={livro.title} 
                             width={80}
                             height={120}
                             style={{ objectFit: 'cover' }}
                           />
                         </div>
                         <div>
-                          <p className="text-sm text-gray-500 mb-2">por {livro.autor}</p>
-                          <Progress value={livro.progresso} className="w-full" />
-                          <p className="text-sm text-gray-500 mt-2">{livro.progresso}% concluído</p>
+                          <p className="text-sm text-gray-500 mb-2">por {livro.author}</p>
+                          <Progress value={livro.progress} className="w-full" />
+                          <p className="text-sm text-gray-500 mt-2">{livro.progress}% concluído</p>
                         </div>
                       </div>
                     </CardContent>
@@ -465,7 +594,7 @@ const MeusLivros = () => {
                         e.stopPropagation()
                         excluirLivro(livro.id)
                       }}
-                      aria-label={`Excluir ${livro.titulo}`}
+                      aria-label={`Excluir ${livro.title}`}
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
@@ -485,7 +614,7 @@ const MeusLivros = () => {
       <Dialog open={modalAberto} onOpenChange={fecharModal}>
         <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{livroSelecionado?.titulo}</DialogTitle>
+            <DialogTitle>{livroSelecionado?.title}</DialogTitle>
           </DialogHeader>
           {livroSelecionado && (
             <div className="space-y-4">
@@ -493,29 +622,29 @@ const MeusLivros = () => {
                 <div className="relative w-full sm:w-32 h-48">
                   <Image 
                     src={livroSelecionado.thumbnail} 
-                    alt={livroSelecionado.titulo} 
+                    alt={livroSelecionado.title} 
                     fill
                     style={{ objectFit: 'cover' }}
                   />
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">por {livroSelecionado.autor}</p>
-                  <p className="text-sm text-gray-500">Ano: {livroSelecionado.ano}</p>
+                  <p className="text-sm text-gray-500">por {livroSelecionado.author}</p>
+                  <p className="text-sm text-gray-500">Ano: {livroSelecionado.year}</p>
                   <p className="text-sm text-gray-500">ISBN: {livroSelecionado.isbn}</p>
-                  <p className="text-sm text-gray-500 mt-2">Progresso: {livroSelecionado.progresso}%</p>
+                  <p className="text-sm text-gray-500 mt-2">Progresso: {livroSelecionado.progress}%</p>
                 </div>
               </div>
               <div className="space-y-2">
                 <h3 className="text-lg font-semibold">Descrição:</h3>
                 <div className="max-h-40 overflow-y-auto">
-                  <p>{livroSelecionado.descricao}</p>
+                  <p>{livroSelecionado.description}</p>
                 </div>
               </div>
               <div className="space-y-2">
                 <h3 className="text-lg font-semibold">Suas Anotações:</h3>
                 <div className="max-h-40 overflow-y-auto">
-                  {livroSelecionado.anotacoes.length > 0 ? (
-                    livroSelecionado.anotacoes.map((anotacao) => (
+                  {livroSelecionado.annotations.length > 0 ? (
+                    livroSelecionado.annotations.map((anotacao) => (
                       <div key={anotacao.id} className="bg-gray-100 p-2 rounded mb-2">
                         <p>{anotacao.content}</p>
                         <p className="text-xs text-gray-500">
@@ -542,11 +671,25 @@ const MeusLivros = () => {
                   <Play className="w-4 h-4 mr-2" />
                   Ouvir Resumo
                 </Button>
-                <Button className="bg-yellow-500 hover:bg-yellow-600 text-white" onClick={() => window.open(livroSelecionado.amazonLink, '_blank')}>
+                <Button 
+                  className="bg-yellow-500 hover:bg-yellow-600 text-white" 
+                  onClick={() => {
+                    if (livroSelecionado.amazon_link) {
+                      window.open(livroSelecionado.amazon_link, '_blank')
+                    }
+                  }}
+                >
                   <ShoppingCart className="w-4 h-4 mr-2" />
                   Comprar na Amazon
                 </Button>
-                <Button className="bg-orange-500 hover:bg-orange-600 text-white" onClick={() => window.open(livroSelecionado.audibleLink, '_blank')}>
+                <Button 
+                  className="bg-orange-500 hover:bg-orange-600 text-white" 
+                  onClick={() => {
+                    if (livroSelecionado.audible_link) {
+                      window.open(livroSelecionado.audible_link, '_blank')
+                    }
+                  }}
+                >
                   <Headphones className="w-4 h-4 mr-2" />
                   Ouvir no Audible
                 </Button>
@@ -561,7 +704,7 @@ const MeusLivros = () => {
         </DialogContent>
       </Dialog>
     </div>
-  );
-};
+  )
+}
 
-export default withAuth(MeusLivros);
+export default withAuth(MeusLivros)

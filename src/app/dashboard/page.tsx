@@ -22,292 +22,163 @@ import { ScrollArea } from '../components/ui/scroll-area'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { Alert, AlertDescription, AlertTitle } from "../components/ui/alert"
 import { AlertCircle } from 'lucide-react'
-import OpenAI from 'openai'
 
-let openai: OpenAI | null = null;
+const supabase = createClientComponentClient()
 
-if (typeof window !== 'undefined') {
-  try {
-    if (!process.env.NEXT_PUBLIC_OPENAI_API_KEY) {
-      console.error('NEXT_PUBLIC_OPENAI_API_KEY is not set in the environment');
-    } else {
-      openai = new OpenAI({
-        apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY,
-        dangerouslyAllowBrowser: true
-      });
-      console.log('OpenAI client initialized successfully');
-    }
-  } catch (error) {
-    console.error('Error initializing OpenAI client:', error);
-  }
+interface Book {
+  id: string
+  title: string
+  author: string
+  isbn: string | null
+  year: number | null
+  description: string | null
+  thumbnail: string | null
+  amazon_link: string | null
+  audible_link: string | null
+  progress: number
+  
 }
 
 interface Annotation {
-  id: string
+  id: number;
+  content: string;
+  created_at: string;
+  book_id: number;
+  book: { title: string }[];
+}
+
+
+interface Message {
+  role: 'user' | 'assistant'
   content: string
-  created_at: string
-  updated_at: string
-  book_id: string
 }
-
-interface Book {
-  id: string;
-  title: string;
-  author: string;
-  year: number | null;
-  isbn: string | null;
-  amazon_link: string | null;
-  audible_link: string | null;
-  thumbnail: string | null;
-  description: string | null;
-  insights: string | null;
-}
-
-interface UserBook {
-  id: string;
-  user_id: string;
-  book_id: string;
-  progress: number;
-  status: string | null;
-  book: Book;
-}
-
-interface BookWithProgress extends Book {
-  progress: number;
-  annotations: Annotation[];
-}
-
-
-interface Conversation {
-  bookId: string
-  messages: { role: 'user' | 'assistant', content: string }[]
-}
-
-interface User {
-  id: string
-  isPremium: boolean
-}
-
-
 
 function Dashboard() {
   const [currentBook, setCurrentBook] = useState<Book | null>(null)
-  const [userBooks, setUserBooks] = useState<Book[]>([])
   const [recentAnnotations, setRecentAnnotations] = useState<Annotation[]>([])
-  const [modalOpen, setModalOpen] = useState(false)
-  const [annotationModalOpen, setAnnotationModalOpen] = useState(false)
-  const [selectedAnnotation, setSelectedAnnotation] = useState<Annotation | null>(null)
+  const [userBooks, setUserBooks] = useState<Book[]>([])
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null)
+  const [conversations, setConversations] = useState<Record<string, Message[]>>({})
   const [message, setMessage] = useState('')
-  const [conversations, setConversations] = useState<{ [key: string]: Conversation }>({})
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [user, setUser] = useState<User | null>(null)
   const [isSending, setIsSending] = useState(false)
   const [dailyMessageCount, setDailyMessageCount] = useState(0)
   const [isLimitReached, setIsLimitReached] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [annotationModalOpen, setAnnotationModalOpen] = useState(false)
+  const [selectedAnnotation, setSelectedAnnotation] = useState<Annotation | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
   const messageInputRef = useRef<HTMLTextAreaElement>(null)
 
-  const supabase = createClientComponentClient()
-
-  const fetchCurrentBook = useCallback(async (userId: string): Promise<BookWithProgress | null> => {
+  const fetchUserData = useCallback(async () => {
+    setIsLoading(true)
     try {
-      const { data, error } = await supabase
-        .from('user_books')
-        .select(`
-          id,
-          progress,
-          book:books (
-            id,
-            title,
-            author,
-            year,
-            isbn,
-            amazon_link,
-            audible_link,
-            thumbnail,
-            description,
-            insights
-          )
-        `)
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single()
-      
-      if (error) {
-        console.error('Erro ao buscar o livro atual:', error)
-        return null
-      }
-      
-      if (data && data.book) {
-        return {
-          id: data.book.id,
-          title: data.book.title,
-          author: data.book.author,
-          year: data.book.year,
-          isbn: data.book.isbn,
-          amazon_link: data.book.amazon_link,
-          audible_link: data.book.audible_link,
-          thumbnail: data.book.thumbnail || '/placeholder.svg?height=200&width=150',
-          description: data.book.description || '',
-          insights: data.book.insights || '',
-          progress: data.progress,
-          annotations: []
-        }
-      }
-      return null
-    } catch (error) {
-      console.error('Error fetching current book:', error)
-      return null
-    }
-  }, [supabase])
-
-  const fetchRecentAnnotations = useCallback(async (userId: string): Promise<Annotation[]> => {
-    try {
-      const { data, error } = await supabase
-        .from('annotations')
-        .select('id, content, created_at, updated_at, book_id')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(5)
-      
-      if (error) {
-        console.error('Erro ao buscar anotações recentes:', error)
-        return []
-      }
-      
-      return data || []
-    } catch (error) {
-      console.error('Error fetching recent annotations:', error)
-      return []
-    }
-  }, [supabase])
-
-  const fetchUserBooks = useCallback(async (userId: string): Promise<Book[]> => {
-    try {
-      const { data, error } = await supabase
-        .from('user_books')
-        .select(`
-          id,
-          user_id,
-          book_id,
-          progress,
-          status,
-          book:books (
-            id,
-            title,
-            author,
-            year,
-            isbn,
-            amazon_link,
-            audible_link,
-            thumbnail,
-            description
-          )
-        `)
-        .eq('user_id', userId)
-      
-      if (error) {
-        console.error('Erro ao buscar livros do usuário:', error)
-        return []
-      }
-      
-      if (!data) return []
-  
-      return (data as UserBook[]).map((item) => ({
-        id: item.book.id,
-        title: item.book.title,
-        author: item.book.author,
-        year: item.book.year || 0,
-        isbn: item.book.isbn || '',
-        amazon_link: item.book.amazon_link || '',
-        audible_link: item.book.audible_link || '',
-        thumbnail: item.book.thumbnail || '/placeholder.svg?height=200&width=150',
-        description: item.book.description || '',
-        progress: item.progress,
-        annotations: []
-      }));
-    } catch (error) {
-      console.error('Error fetching user books:', error)
-      return []
-    }
-  }, [supabase])
-
-  useEffect(() => {
-    const fetchData = async (retryCount = 0) => {
-      setIsLoading(true)
-      setError(null)
-      try {
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-        console.log('Dados da sessão:', session)
-        console.log('Erro da sessão:', sessionError)
-
-        if (sessionError) throw sessionError
-
-        if (!session) {
-          if (retryCount < 3) {
-            console.log(`Sessão não encontrada. Tentando novamente... (Tentativa ${retryCount + 1})`)
-            setTimeout(() => fetchData(retryCount + 1), 1000)
-            return
-          }
-          throw new Error("Nenhuma sessão ativa encontrada após as tentativas")
-        }
-
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
         const { data: userData, error: userError } = await supabase
           .from('users')
-          .select('id, is_premium')
-          .eq('auth_id', session.user.id)
+          .select('id')
+          .eq('auth_id', user.id)
           .single()
 
         if (userError) throw userError
 
-        setUser({
-          id: userData.id,
-          isPremium: userData.is_premium
-        })
-
-        const [currentBookData, annotationsData, userBooksData] = await Promise.all([
-          fetchCurrentBook(userData.id),
-          fetchRecentAnnotations(userData.id),
-          fetchUserBooks(userData.id)
-        ])
-
-        console.log('Dados obtidos:', { currentBookData, annotationsData, userBooksData })
-
-        setCurrentBook(currentBookData)
-        setRecentAnnotations(annotationsData)
-        setUserBooks(userBooksData)
-
-        if (userBooksData && userBooksData.length > 0) {
-          setSelectedBookId(userBooksData[0].id)
+        if (userData) {
+          await Promise.all([
+            fetchUserBooks(userData.id),
+            fetchRecentAnnotations(userData.id),
+            fetchDailyMessageCount(userData.id),
+          ])
         }
+      }
+    } catch (error) {
+      console.error('Error fetching user data:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
 
-        // Fetch daily message count
-        const { data: messageCountData, error: messageCountError } = await supabase
-          .from('user_daily_messages')
-          .select('message_count')
-          .eq('user_id', userData.id)
-          .eq('date', new Date().toISOString().split('T')[0])
-          .maybeSingle()
+  useEffect(() => {
+    fetchUserData()
+  }, [fetchUserData])
 
-        if (messageCountError) {
-          console.error('Error fetching daily message count:', messageCountError)
-        } else {
-          setDailyMessageCount(messageCountData?.message_count || 0)
-          setIsLimitReached(messageCountData?.message_count >= 100)
-        }
+  const fetchUserBooks = async (userId: string) => {
+    const { data, error } = await supabase
+      .from('user_books')
+      .select(`
+        id,
+        progress,
+        book:books (
+          id,
+          title,
+          author,
+          isbn,
+          year,
+          description,
+          thumbnail,
+          amazon_link,
+          audible_link
+        )
+      `)
+      .eq('user_id', userId)
+      .eq('status', true)
+      .order('created_at', { ascending: false })
 
-      } catch (err) {
-        console.error('Erro ao buscar dados:', err)
-        setError('Ocorreu um erro ao carregar seus dados. Por favor, tente novamente.')
-      } finally {
-        setIsLoading(false)
+    if (error) {
+      console.error('Error fetching user books:', error)
+    } else {
+      const formattedBooks: Book[] = data.map((item: any) => ({
+        ...item.book,
+        progress: item.progress
+      }))
+      setUserBooks(formattedBooks)
+      if (formattedBooks.length > 0) {
+        setCurrentBook(formattedBooks[0])
       }
     }
+  }
 
-    fetchData()
-  }, [fetchCurrentBook, fetchRecentAnnotations, fetchUserBooks, supabase])
+  const fetchRecentAnnotations = async (userId: string) => {
+    const { data, error } = await supabase
+      .from('annotations')
+      .select(`
+        id,
+        content,
+        created_at,
+        book_id,
+        book:books (title)
+      `)
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(5)
+
+    if (error) {
+      console.error('Error fetching recent annotations:', error)
+    } else {
+      setRecentAnnotations(data)
+    }
+  }
+
+  const fetchDailyMessageCount = async (userId: string) => {
+    const today = new Date().toISOString().split('T')[0]
+    const { data, error } = await supabase
+      .from('daily_message_count')
+      .select('count')
+      .eq('user_id', userId)
+      .eq('date', today)
+      .single()
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        setDailyMessageCount(0)
+        setIsLimitReached(false)
+      } else {
+        console.error('Error fetching daily message count:', error)
+      }
+    } else {
+      setDailyMessageCount(data?.count || 0)
+      setIsLimitReached(data?.count >= 100)
+    }
+  }
 
   const openModal = (book: Book) => {
     setCurrentBook(book)
@@ -324,85 +195,89 @@ function Dashboard() {
   }
 
   const closeAnnotationModal = () => {
-    setSelectedAnnotation(null)
     setAnnotationModalOpen(false)
-  }
-
-  const updateDailyMessageCount = async () => {
-    if (!user) return
-
-    const today = new Date().toISOString().split('T')[0]
-    const { error } = await supabase
-      .from('user_daily_messages')
-      .upsert(
-        { user_id: user.id, date: today, message_count: dailyMessageCount + 1 },
-        { onConflict: 'user_id,date' }
-      )
-
-    if (error) {
-      console.error('Error updating daily message count:', error)
-    } else {
-      setDailyMessageCount(prevCount => {
-        const newCount = prevCount + 1
-        setIsLimitReached(newCount >= 100)
-        return newCount
-      })
-    }
-  }
-
-  const sendMessage = async () => {
-    if (message.trim() === '' || !selectedBookId || isLimitReached) return
-    setIsSending(true)
-
-    const newMessage = { role: 'user' as const, content: message }
-    const updatedConversations = { ...conversations }
-    
-    if (!updatedConversations[selectedBookId]) {
-      updatedConversations[selectedBookId] = { bookId: selectedBookId, messages: [] }
-    }
-    
-    updatedConversations[selectedBookId].messages.push(newMessage)
-    setConversations(updatedConversations)
-
-    try {
-      if (!openai) {
-        throw new Error('OpenAI client is not initialized');
-      }
-
-      const selectedBook = userBooks.find(book => book.id === selectedBookId)
-      const context = `Livro: ${selectedBook?.title} por ${selectedBook?.author}. Resumo: ${selectedBook?.description}`
-      
-      const response = await openai.chat.completions.create({
-        model: "gpt-3.5-turbo",
-        messages: [
-          { role: "system", content: `Você é um assistente especializado em literatura. Você pode responder perguntas sobre o livro atual apenas se o usuário selecionou o livro. Em alguns momentos você pode agir como o autor do livro, caso o usuário pergunte sobre isso, você também pode responder como um personagem do livro, caso o usuário pergunte sobre isso. O contexto do livro atual é: ${context}` },
-          ...updatedConversations[selectedBookId].messages
-        ],
-      })
-
-      const aiMessage = { role: 'assistant' as const, content: response.choices[0].message.content || "Desculpe, não consegui gerar uma resposta." }
-      updatedConversations[selectedBookId].messages.push(aiMessage)
-      setConversations({ ...updatedConversations })
-
-      await updateDailyMessageCount()
-    } catch (error) {
-      console.error('Erro ao enviar mensagem para OpenAI:', error)
-      const errorMessage = { role: 'assistant' as const, content: "Desculpe, ocorreu um erro ao processar sua mensagem. Por favor, tente novamente." }
-      updatedConversations[selectedBookId].messages.push(errorMessage)
-      setConversations({ ...updatedConversations })
-    } finally {
-      setIsSending(false)
-      setMessage('')
-      if (messageInputRef.current) {
-        messageInputRef.current.focus()
-      }
-    }
+    setSelectedAnnotation(null)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       sendMessage()
+    }
+  }
+
+  const sendMessage = async () => {
+    if (!selectedBookId || !message.trim() || isSending || isLimitReached) return
+
+    setIsSending(true)
+    const selectedBook = userBooks.find(book => book.id === selectedBookId)
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: message }],
+          bookTitle: selectedBook?.title,
+          bookAuthor: selectedBook?.author
+        })
+      })
+
+      if (!response.ok) throw new Error('Failed to send message')
+
+      const { message: aiMessage } = await response.json()
+
+      setConversations(prev => ({
+        ...prev,
+        [selectedBookId]: [
+          ...(prev[selectedBookId] || []),
+          { role: 'user', content: message },
+          { role: 'assistant', content: aiMessage }
+        ]
+      }))
+
+      setMessage('')
+      await updateDailyMessageCount()
+    } catch (error) {
+      console.error('Error sending message:', error)
+    } finally {
+      setIsSending(false)
+    }
+  }
+
+  const updateDailyMessageCount = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('auth_id', user.id)
+        .single()
+
+      if (userError) {
+        console.error('Error fetching user data:', userError)
+        return
+      }
+
+      if (userData) {
+        const today = new Date().toISOString().split('T')[0]
+        const { data, error } = await supabase
+          .from('daily_message_count')
+          .upsert(
+            { user_id: userData.id, date: today, count: dailyMessageCount + 1 },
+            { onConflict: 'user_id,date' }
+          )
+
+        if (error) {
+          console.error('Error updating daily message count:', error)
+        } else {
+          setDailyMessageCount(prev => {
+            const newCount = prev + 1
+            setIsLimitReached(newCount >= 100)
+            return newCount
+          })
+        }
+      }
     }
   }
 
@@ -423,14 +298,6 @@ function Dashboard() {
       <main className="container mx-auto px-4 py-8">
         <h1 className="text-3xl font-bold mb-6 text-gray-800">Sua Jornada de Leitura</h1>
         
-        {error && (
-          <Alert variant="destructive" className="mb-4">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Erro</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           {currentBook ? (
             <Card className="cursor-pointer hover:shadow-md transition-shadow duration-200" onClick={() => openModal(currentBook)}>
@@ -441,7 +308,7 @@ function Dashboard() {
                 <div className="flex items-center space-x-4">
                   <div className="relative w-20 h-30">
                     <Image 
-                      src={currentBook.thumbnail}
+                      src={currentBook.thumbnail || '/placeholder.svg?height=200&width=150'}
                       alt={currentBook.title}
                       width={80}
                       height={120}
@@ -514,27 +381,27 @@ function Dashboard() {
                   <SelectValue placeholder="Selecione um livro" />
                 </SelectTrigger>
                 <SelectContent>
-                  {userBooks && userBooks.length > 0 ? (
-                    userBooks.map((book) => (
-                      <SelectItem key={book.id} value={book.id}>{book.title}</SelectItem>
-                    ))
-                  ) : (
-                    <SelectItem value="no-books" disabled>Nenhum livro disponível</SelectItem>
-                  )}
+                {userBooks && userBooks.length > 0 ? (
+                  userBooks.map((book) => (
+                    <SelectItem key={book.id} value={book.id}>{book.title}</SelectItem>
+                  ))
+                ) : (
+                  <SelectItem value="no-books" disabled>Nenhum livro disponível</SelectItem>
+                )}
                 </SelectContent>
               </Select>
-              {userBooks.length === 0 && (
+              {!selectedBookId && (
                 <Alert>
                   <AlertCircle className="h-4 w-4" />
-                  <AlertTitle>Nenhum livro encontrado</AlertTitle>
+                  <AlertTitle>Nenhum livro selecionado</AlertTitle>
                   <AlertDescription>
-                    Você ainda não adicionou nenhum livro à sua coleção. Adicione um livro para começar a conversar sobre ele!
+                    Por favor, selecione um livro para iniciar a conversa.
                   </AlertDescription>
                 </Alert>
               )}
               <ScrollArea className="h-80 rounded-md border bg-gray-50">
                 <div className="p-4">
-                  {selectedBookId && conversations[selectedBookId]?.messages.map((msg, index) => (
+                  {selectedBookId && conversations[selectedBookId]?.map((msg, index) => (
                     <div key={index} className={`mb-4 flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                       <div className={`flex items-start space-x-2 max-w-[70%] ${msg.role === 'user' ? 'flex-row-reverse space-x-reverse' : ''}`}>
                         <div className={`p-2 rounded-full ${msg.role === 'user' ? 'bg-purple-600' : 'bg-gray-300'}`}>
@@ -559,14 +426,14 @@ function Dashboard() {
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="Pergunte-me qualquer coisa sobre o livro selecionado..."
+                    placeholder={selectedBookId ? "Pergunte-me qualquer coisa sobre o livro selecionado..." : "Selecione um livro para iniciar a conversa"}
                     className="flex-grow"
-                    disabled={isLimitReached || userBooks.length === 0}
+                    disabled={!selectedBookId || isLimitReached}
                   />
                   <Button 
                     className="bg-purple-600 hover:bg-purple-700 text-white" 
                     onClick={sendMessage}
-                    disabled={isSending || isLimitReached || userBooks.length === 0}
+                    disabled={isSending || !selectedBookId || isLimitReached}
                   >
                     {isSending ? (
                       <span className="animate-pulse">Enviando...</span>
@@ -606,7 +473,7 @@ function Dashboard() {
               <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-4 sm:space-y-0 sm:space-x-4">
                 <div className="relative w-full sm:w-32 h-48">
                   <Image 
-                    src={currentBook.thumbnail}
+                    src={currentBook.thumbnail || '/placeholder.svg?height=200&width=150'}
                     alt={currentBook.title}
                     fill
                     style={{ objectFit: 'cover' }}
@@ -627,33 +494,32 @@ function Dashboard() {
                 <h3 className="font-semibold mb-2 text-gray-800">Links:</h3>
                 <div className="space-y-2">
                   {currentBook.amazon_link && (
-                    <Button variant="outline" className="w-full" onClick={() => window.open(currentBook.amazon_link, '_blank')}>
+                    <Button 
+                      variant="outline" 
+                      className="w-full" 
+                      onClick={() => {
+                        if (currentBook.amazon_link) {
+                          window.open(currentBook.amazon_link, '_blank')
+                        }
+                      }}
+                    >
                       Ver na Amazon
                     </Button>
                   )}
                   {currentBook.audible_link && (
-                    <Button variant="outline" className="w-full" onClick={() => window.open(currentBook.audible_link, '_blank')}>
+                    <Button 
+                      variant="outline" 
+                      className="w-full" 
+                      onClick={() => {
+                        if (currentBook.audible_link) {
+                          window.open(currentBook.audible_link, '_blank')
+                        }
+                      }}
+                    >
                       Ver no Audible
                     </Button>
                   )}
                 </div>
-              </div>
-              <div>
-                <h3 className="font-semibold mb-2 text-gray-800">Suas Anotações:</h3>
-                <ScrollArea className="h-40">
-                  {currentBook.annotations.length > 0 ? (
-                    currentBook.annotations.map((annotation, index) => (
-                      <div key={index} className="bg-gray-100 p-2 rounded mb-2">
-                        <p>{annotation.content}</p>
-                        <p className="text-xs text-gray-500">
-                          Criada em: {new Date(annotation.created_at).toLocaleString()}
-                        </p>
-                      </div>
-                    ))
-                  ) : (
-                    <p>Você ainda não fez nenhuma anotação para este livro.</p>
-                  )}
-                </ScrollArea>
               </div>
             </div>
           )}
@@ -667,23 +533,28 @@ function Dashboard() {
       </Dialog>
 
       <Dialog open={annotationModalOpen} onOpenChange={closeAnnotationModal}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[500px] w-full">
           <DialogHeader>
-            <DialogTitle>Detalhes da Anotação</DialogTitle>
+            <DialogTitle className="text-xl font-semibold">Detalhes da Anotação</DialogTitle>
           </DialogHeader>
           {selectedAnnotation && (
             <div className="space-y-4">
-              <p className="text-gray-800">{selectedAnnotation.content}</p>
-              <p className="text-sm text-gray-500">
-                Criada em: {new Date(selectedAnnotation.created_at).toLocaleString()}
-              </p>
-              <p className="text-sm text-gray-500">
-                Livro: {userBooks.find(book => book.id === selectedAnnotation.book_id)?.title || 'Desconhecido'}
-              </p>
+              <ScrollArea className="h-[200px] w-full rounded-md border">
+                <div className="p-4">
+                  <p className="text-gray-800 break-words whitespace-pre-wrap">{selectedAnnotation.content}</p>
+                </div>
+              </ScrollArea>
+              <div className="text-sm text-gray-500 space-y-1">
+                <p>
+                  Criada em: {new Date(selectedAnnotation.created_at).toLocaleString()}
+                </p>
+              </div>
             </div>
           )}
-          <DialogFooter>
-            <Button onClick={closeAnnotationModal}>Fechar</Button>
+          <DialogFooter className="sm:justify-end">
+            <Button onClick={closeAnnotationModal} className="w-full sm:w-auto">
+              Fechar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
