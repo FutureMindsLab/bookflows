@@ -35,7 +35,7 @@ const Navigation = () => {
 
   const navItems = [
     { name: 'Dashboard', href: '/dashboard', icon: <Book className="w-4 h-4 mr-2" /> },
-    { name: 'Meus Livros', href: '/meus-livros', icon: <BookOpen className="w-4 h-4 mr-2" /> },
+    { name: 'Minha Biblioteca', href: '/meus-livros', icon: <BookOpen className="w-4 h-4 mr-2" /> },
   ]
 
   const userMenuItems = [

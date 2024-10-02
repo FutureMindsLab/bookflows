@@ -10,7 +10,6 @@ import { Input } from '../components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog'
 import { Textarea } from '../components/ui/textarea'
-//import { Progress } from '../components/ui/progress'
 import { Alert, AlertDescription, AlertTitle } from "../components/ui/alert"
 import { ShoppingCart, Headphones, Play, Search, AlertCircle, Trash2 } from 'lucide-react'
 import { useDebounce } from 'use-debounce'
@@ -57,20 +56,6 @@ const MeusLivros: React.FC = () => {
   const router = useRouter()
   const supabase = createClientComponentClient()
 
-  const checkUserTable = async () => {
-    const { data, error } = await supabase
-      .from('users')
-      .select('id, auth_id, is_premium')
-      .limit(1)
-
-    if (error) {
-      console.error('Error checking users table:', error)
-      return
-    }
-
-    console.log('Users table structure:', data)
-  }
-
   const checkUserAndLoadBooks = async () => {
     try {
       const { data: { session }, error: sessionError } = await supabase.auth.getSession()
@@ -99,7 +84,6 @@ const MeusLivros: React.FC = () => {
   
       if (!data) {
         console.log('User not found in users table')
-        // Instead of redirecting, let's try to create the user
         const { data: newUser, error: createError } = await supabase
           .from('users')
           .insert({ auth_id: session.user.id, is_premium: false })
@@ -136,7 +120,6 @@ const MeusLivros: React.FC = () => {
 
   const carregarLivros = useCallback(async (userId: string) => {
     try {
-      // Step 1: Fetch user_books info and annotations
       const { data: userBooksData, error: userBooksError } = await supabase
         .from('user_books')
         .select(`
@@ -148,7 +131,6 @@ const MeusLivros: React.FC = () => {
         .eq('user_id', userId)
         .eq('status', true)
       
-  
       if (userBooksError) throw userBooksError
   
       if (!userBooksData || userBooksData.length === 0) {
@@ -156,7 +138,6 @@ const MeusLivros: React.FC = () => {
         return
       }
   
-      // Step 2: Fetch book information for each user_book
       const bookPromises = userBooksData.map(async (userBook) => {
         const { data: bookData, error: bookError } = await supabase
           .from('books')
@@ -201,7 +182,6 @@ const MeusLivros: React.FC = () => {
   }, [supabase])
 
   useEffect(() => {
-    checkUserTable()
     checkUserAndLoadBooks()
   }, [])
 
@@ -231,7 +211,6 @@ const MeusLivros: React.FC = () => {
             annotations: []
           })))
         } else {
-          // If not found in books table, search Google Books API
           const response = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}`)
           if (!response.ok) {
             throw new Error(`API response error: ${response.status} ${response.statusText}`)
@@ -299,152 +278,146 @@ const MeusLivros: React.FC = () => {
   }
 
   const adicionarLivro = async (livro: Livro) => {
-  if (!user) {
-    setErro('Você precisa estar logado para adicionar livros.')
-    return
-  }
+    if (!user) {
+      setErro('Você precisa estar logado para adicionar livros.')
+      return
+    }
 
-  try {
-    // First, check if the user exists in the users table
-    let userData
-    const { data, error: userError } = await supabase
-      .from('users')
-      .select('id, is_premium')
-      .eq('id', user.id)
-      .single()
-
-    if (userError && userError.code === 'PGRST116') {
-      // User not found, create a new user record
-      const { data: newUser, error: createError } = await supabase
+    try {
+      let userData
+      const { data, error: userError } = await supabase
         .from('users')
-        .insert({ id: user.id, is_premium: false })
-        .select()
+        .select('id, is_premium')
+        .eq('id', user.id)
         .single()
 
-      if (createError) {
-        console.error('Error creating new user:', createError)
-        setErro('Ocorreu um erro ao criar seu perfil. Por favor, tente novamente.')
-        return
-      }
+      if (userError && userError.code === 'PGRST116') {
+        const { data: newUser, error: createError } = await supabase
+          .from('users')
+          .insert({ id: user.id, is_premium: false })
+          .select()
+          .single()
 
-      userData = newUser
-    } else if (userError) {
-      console.error('Error fetching user data:', userError)
-      setErro('Ocorreu um erro ao verificar seus dados. Por favor, tente novamente.')
-      return
-    } else {
-      userData = data
-    }
+        if (createError) {
+          console.error('Error creating new user:', createError)
+          setErro('Ocorreu um erro ao criar seu perfil. Por favor, tente novamente.')
+          return
+        }
 
-    if (!userData) {
-      setErro('Usuário não encontrado. Por favor, faça login novamente.')
-      return
-    }
-
-    // Continue with the existing logic to check premium status and book count
-    if (!userData.is_premium) {
-      const { count, error } = await supabase
-        .from('user_books')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', userData.id)
-        .eq('status', true)
-
-      if (error) {
-        console.error('Erro ao contar livros do usuário:', error)
-        setErro('Ocorreu um erro ao verificar seus livros. Por favor, tente novamente.')
-        return
-      }
-
-      const bookCount = count ?? 0
-
-      if (bookCount >= 2) {
-        setErro('Você é um usuário gratuito e já tem 2 livros adicionados. Delete um dos livros ou faça o upgrade para premium.')
-        return
-      }
-    }
-
-    // Check if the book already exists in the books table
-    let bookId = livro.id
-    const { data: existingBook, error: existingBookError } = await supabase
-      .from('books')
-      .select('id')
-      .eq('title', livro.title)
-      .eq('author', livro.author)
-      .single()
-
-    if (existingBookError && existingBookError.code !== 'PGRST116') {
-      throw existingBookError
-    }
-
-    if (!existingBook) {
-      // If the book doesn't exist, insert it into the books table
-      const { data: newBook, error: insertBookError } = await supabase
-        .from('books')
-        .insert({
-          title: livro.title,
-          author: livro.author,
-          year: livro.year,
-          isbn: livro.isbn,
-          amazon_link: livro.amazon_link,
-          audible_link: livro.audible_link,
-          thumbnail: livro.thumbnail,
-          description: livro.description
-        })
-        .select()
-
-      if (insertBookError) throw insertBookError
-      bookId = newBook[0].id
-    } else {
-      bookId = existingBook.id
-    }
-
-    // Check if the user already has this book
-    const { data: existingUserBook, error: existingUserBookError } = await supabase
-      .from('user_books')
-      .select('id, status')
-      .eq('user_id', userData.id)
-      .eq('book_id', bookId)
-      .single()
-
-    if (existingUserBookError && existingUserBookError.code !== 'PGRST116') {
-      throw existingUserBookError
-    }
-
-    if (existingUserBook) {
-      if (existingUserBook.status) {
-        setErro('Este livro já está na sua lista.')
+        userData = newUser
+      } else if (userError) {
+        console.error('Error fetching user data:', userError)
+        setErro('Ocorreu um erro ao verificar seus dados. Por favor, tente novamente.')
         return
       } else {
-        // If the book exists but is inactive, reactivate it
-        const { error: updateError } = await supabase
-          .from('user_books')
-          .update({ status: true })
-          .eq('id', existingUserBook.id)
-
-        if (updateError) throw updateError
+        userData = data
       }
-    } else {
-      // If the user doesn't have this book, add it to user_books
-      const { error: insertError } = await supabase
+
+      if (!userData) {
+        setErro('Usuário não encontrado. Por favor, faça login novamente.')
+        return
+      }
+
+      if (!userData.is_premium) {
+        const { count, error } = await supabase
+          .from('user_books')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', userData.id)
+          .eq('status', true)
+
+        if (error) {
+          console.error('Erro ao contar livros do usuário:', error)
+          setErro('Ocorreu um erro ao verificar seus livros. Por favor, tente novamente.')
+          return
+        }
+
+        const bookCount = count ?? 0
+
+        if (bookCount >= 2) {
+          setErro('Você é um usuário gratuito e já tem 2 livros adicionados. Delete um dos livros ou faça o upgrade para premium.')
+          return
+        }
+      }
+
+      let bookId = livro.id
+      const { data: existingBook, error: existingBookError } = await supabase
+        .from('books')
+        .select('id')
+        .eq('title', livro.title)
+        .eq('author', livro.author)
+        .single()
+
+      if (existingBookError && existingBookError.code !== 'PGRST116') {
+        throw existingBookError
+      }
+
+      if (!existingBook) {
+        const { data: newBook, error: insertBookError } = await supabase
+          .from('books')
+          .insert({
+            title: livro.title,
+            author: livro.author,
+            year: livro.year,
+            isbn: livro.isbn,
+            amazon_link: livro.amazon_link,
+            audible_link: livro.audible_link,
+            thumbnail: livro.thumbnail,
+            description: livro.description
+          })
+          .select()
+
+        if (insertBookError) throw insertBookError
+        bookId = newBook[0].id
+      } else {
+        bookId = existingBook.id
+      }
+
+      const { data: existingUserBook, error: existingUserBookError } = await supabase
         .from('user_books')
-        .insert({
-          user_id: userData.id,
-          book_id: bookId,
-          progress: 0,
-          status: true
-        })
+        .select('id, status')
+        .eq('user_id', userData.id)
+        .eq('book_id', bookId)
+        .single()
 
-      if (insertError) throw insertError
+      if (existingUserBookError && existingUserBookError.code !== 'PGRST116') {
+        throw existingUserBookError
+      }
+
+      if (existingUserBook) {
+        if (existingUserBook.status) {
+          setErro('Este livro já está na sua lista.')
+          return
+        } else {
+          const { error: updateError } = await supabase
+            .from('user_books')
+            .update({ status: true })
+            .eq('id', existingUserBook.id)
+
+          if (updateError) throw updateError
+        }
+      } else {
+        const { error: insertError } = await supabase
+          .from('user_books')
+          .insert({
+            user_id: userData.id,
+            book_id: bookId,
+            progress: 0,
+            status: true
+          })
+
+        if (insertError)
+
+ throw insertError
+      }
+
+      await carregarLivros(userData.id)
+      setNovoLivroTitulo('')
+      setSugestoes([])
+    } catch (error) {
+      console.error('Erro ao adicionar livro:', error)
+      setErro('Ocorreu um erro ao adicionar o livro. Por favor, tente novamente.')
     }
-
-    await carregarLivros(userData.id)
-    setNovoLivroTitulo('')
-    setSugestoes([])
-  } catch (error) {
-    console.error('Erro ao adicionar livro:', error)
-    setErro('Ocorreu um erro ao adicionar o livro. Por favor, tente novamente.')
   }
-}
 
   const adicionarAnotacao = async (userBookId: string, content: string) => {
     if (!user) return
@@ -491,6 +464,7 @@ const MeusLivros: React.FC = () => {
       if (error) throw error
 
       await carregarLivros(user.id)
+      setErro(null) // Clear any existing error messages
     } catch (error) {
       console.error('Erro ao excluir livro:', error)
       setErro('Ocorreu um erro ao excluir o livro. Por favor, tente novamente.')
@@ -523,12 +497,12 @@ const MeusLivros: React.FC = () => {
           </CardHeader>
           <CardContent>
             <div className="flex justify-between items-center mb-6">
-              <div className="relative w-64">
+              <div className="relative w-full">
                 <Input
                   placeholder="Buscar novo livro"
                   value={novoLivroTitulo}
                   onChange={(e) => setNovoLivroTitulo(e.target.value)}
-                  className="w-full"
+                  className="w-full pr-10"
                   aria-label="Buscar novo livro"
                 />
                 <Button className="absolute right-0 top-0 h-full bg-purple-600 hover:bg-purple-700 text-white" aria-label="Buscar">
@@ -538,18 +512,27 @@ const MeusLivros: React.FC = () => {
             </div>
             
             {sugestoes.length > 0 && (
-              <div className="mb-6 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+              <div className="mb-6 bg-white border border-gray-300 rounded-md shadow-lg max-h-80 overflow-y-auto">
                 {sugestoes.map((livro) => (
                   <div
                     key={livro.id}
-                    className="p-2 hover:bg-gray-100 cursor-pointer"
+                    className="p-4 hover:bg-gray-100 cursor-pointer flex items-center space-x-4"
                     onClick={() => adicionarLivro(livro)}
                     role="button"
                     tabIndex={0}
                     aria-label={`Adicionar ${livro.title}`}
                   >
-                    <p className="font-semibold">{livro.title}</p>
-                    <p className="text-sm text-gray-600">{livro.author}</p>
+                    <Image 
+                      src={livro.thumbnail} 
+                      alt={livro.title}
+                      width={60}
+                      height={90}
+                      className="object-cover"
+                    />
+                    <div>
+                      <p className="font-semibold">{livro.title}</p>
+                      <p className="text-sm text-gray-600">{livro.author}</p>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -583,7 +566,6 @@ const MeusLivros: React.FC = () => {
                         </div>
                         <div>
                           <p className="text-sm text-gray-500 mb-2">por {livro.author}</p>
-                          
                         </div>
                       </div>
                     </CardContent>

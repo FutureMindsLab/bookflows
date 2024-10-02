@@ -3,11 +3,11 @@
 import { withAuth } from '@/Components/withAuth'
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import Image from 'next/image'
+import Link from 'next/link'
 import Navigation from '@/Components/Navigation'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
-//import { Progress } from '../components/ui/progress'
-import { MessageCircle, Brain, BookOpen, User } from 'lucide-react'
+import { MessageCircle, Brain, BookOpen, User, Copy, RotateCcw, Settings, LogOut, PenSquare, Send, ChevronDown, Info } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Textarea } from '../components/ui/textarea'
 import {
@@ -36,21 +36,25 @@ interface Book {
   amazon_link: string | null
   audible_link: string | null
   progress: number
-  
 }
 
 interface Annotation {
-  id: number;
-  content: string;
-  created_at: string;
-  book_id: number;
-  book: { title: string }[];
+  id: number
+  content: string
+  created_at: string
+  book_id: number
+  book: { title: string }[]
 }
-
 
 interface Message {
   role: 'user' | 'assistant'
   content: string
+}
+
+interface Conversation {
+  id: string
+  title: string
+  messages: Message[]
 }
 
 function Dashboard() {
@@ -58,7 +62,8 @@ function Dashboard() {
   const [recentAnnotations, setRecentAnnotations] = useState<Annotation[]>([])
   const [userBooks, setUserBooks] = useState<Book[]>([])
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null)
-  const [conversations, setConversations] = useState<Record<string, Message[]>>({})
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null)
   const [message, setMessage] = useState('')
   const [isSending, setIsSending] = useState(false)
   const [dailyMessageCount, setDailyMessageCount] = useState(0)
@@ -133,6 +138,10 @@ function Dashboard() {
       setUserBooks(formattedBooks)
       if (formattedBooks.length > 0) {
         setCurrentBook(formattedBooks[0])
+        setSelectedBookId(formattedBooks[0].id)
+      } else {
+        setCurrentBook(null)
+        setSelectedBookId(null)
       }
     }
   }
@@ -206,20 +215,43 @@ function Dashboard() {
     }
   }
 
+  const startNewConversation = () => {
+    const newConversation: Conversation = {
+      id: Date.now().toString(),
+      title: 'Nova Conversa',
+      messages: []
+    }
+    setConversations(prev => [newConversation, ...prev])
+    setCurrentConversation(newConversation)
+    setMessage('')
+  }
+
+  const selectConversation = (conversation: Conversation) => {
+    setCurrentConversation(conversation)
+    setMessage('')
+  }
+
   const sendMessage = async () => {
-    if (!selectedBookId || !message.trim() || isSending || isLimitReached) return
+    if (!message.trim() || isSending || isLimitReached || !currentConversation || !selectedBookId) return
 
     setIsSending(true)
-    const selectedBook = userBooks.find(book => book.id === selectedBookId)
 
     try {
+      const newUserMessage: Message = { role: 'user', content: message }
+      const updatedConversation = {
+        ...currentConversation,
+        messages: [...currentConversation.messages, newUserMessage]
+      }
+
+      setCurrentConversation(updatedConversation)
+      setConversations(prev => prev.map(conv => conv.id === updatedConversation.id ? updatedConversation : conv))
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: message }],
-          bookTitle: selectedBook?.title,
-          bookAuthor: selectedBook?.author
+          messages: updatedConversation.messages,
+          bookTitle: userBooks.find(book => book.id === selectedBookId)?.title
         })
       })
 
@@ -227,14 +259,15 @@ function Dashboard() {
 
       const { message: aiMessage } = await response.json()
 
-      setConversations(prev => ({
-        ...prev,
-        [selectedBookId]: [
-          ...(prev[selectedBookId] || []),
-          { role: 'user', content: message },
-          { role: 'assistant', content: aiMessage }
-        ]
-      }))
+      const newAiMessage: Message = { role: 'assistant', content: aiMessage }
+      const finalConversation = {
+        ...updatedConversation,
+        messages: [...updatedConversation.messages, newAiMessage],
+        title: generateConversationTitle(updatedConversation.messages[0].content)
+      }
+
+      setCurrentConversation(finalConversation)
+      setConversations(prev => prev.map(conv => conv.id === finalConversation.id ? finalConversation : conv))
 
       setMessage('')
       await updateDailyMessageCount()
@@ -243,6 +276,11 @@ function Dashboard() {
     } finally {
       setIsSending(false)
     }
+  }
+
+  const generateConversationTitle = (firstMessage: string) => {
+    const words = firstMessage.split(' ').slice(0, 3).join(' ')
+    return words.length > 30 ? words.substring(0, 30) + '...' : words
   }
 
   const updateDailyMessageCount = async () => {
@@ -281,6 +319,14 @@ function Dashboard() {
     }
   }
 
+  const formatAIResponse = (content: string) => {
+    const paragraphs = content.split('\n\n')
+    return paragraphs.map((paragraph, index) => {
+      const formattedParagraph = paragraph.replace(/\*(.*?)\*/g, '<strong>$1</strong>')
+      return <p key={index} dangerouslySetInnerHTML={{ __html: formattedParagraph }} className="mb-4" />
+    })
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-r from-purple-400 via-pink-500 to-red-500 flex items-center justify-center">
@@ -293,18 +339,21 @@ function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen bg-white">
       <Navigation />
       <main className="container mx-auto px-4 py-8">
         <h1 className="text-3xl font-bold mb-6 text-gray-800">Sua Jornada de Leitura</h1>
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-          {currentBook ? (
-            <Card className="cursor-pointer hover:shadow-md transition-shadow duration-200" onClick={() => openModal(currentBook)}>
-              <CardHeader>
-                <CardTitle>Leitura Atual</CardTitle>
-              </CardHeader>
-              <CardContent>
+          <Card className="cursor-pointer hover:shadow-md transition-shadow duration-200" onClick={() => currentBook && openModal(currentBook)}>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                Leitura Atual
+                <Info className="w-4 h-4 ml-2 text-gray-400" />
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {currentBook ? (
                 <div className="flex items-center space-x-4">
                   <div className="relative w-20 h-30">
                     <Image 
@@ -320,22 +369,18 @@ function Dashboard() {
                     <p className="text-sm text-gray-500">por {currentBook.author}</p>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle>Nenhum livro atual</CardTitle>
-              </CardHeader>
-              <CardContent>
+              ) : (
                 <p>Você ainda não começou a ler nenhum livro. Que tal começar agora?</p>
-              </CardContent>
-            </Card>
-          )}
+              )}
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle>Anotações Recentes</CardTitle>
+              <CardTitle className="flex items-center">
+                Anotações Recentes
+                <Info className="w-4 h-4 ml-2 text-gray-400" />
+              </CardTitle>
             </CardHeader>
             <CardContent>
               {recentAnnotations.length > 0 ? (
@@ -346,7 +391,7 @@ function Dashboard() {
                       className="flex items-center space-x-2 cursor-pointer hover:bg-gray-100 p-2 rounded"
                       onClick={() => openAnnotationModal(annotation)}
                     >
-                      <MessageCircle className="w-4 h-4 text-purple-600 flex-shrink-0" />
+                      <MessageCircle className="w-4 h-4 text-[#16d2a4] flex-shrink-0" />
                       <span className="text-sm truncate">{annotation.content}</span>
                     </li>
                   ))}
@@ -359,7 +404,10 @@ function Dashboard() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Resumo Diário</CardTitle>
+              <CardTitle className="flex items-center">
+                Resumo Diário
+                <Info className="w-4 h-4 ml-2 text-gray-400" />
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-sm">&ldquo;A verdadeira liderança é servir. Liderar é servir. Servir é liderar.&rdquo; - O Monge e o Executivo</p>
@@ -368,83 +416,117 @@ function Dashboard() {
           </Card>
         </div>
 
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle>Converse com o BookFlows AI</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <Select value={selectedBookId || undefined} onValueChange={setSelectedBookId}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Selecione um livro" />
-                </SelectTrigger>
-                <SelectContent>
-                {userBooks && userBooks.length > 0 ? (
-                  userBooks.map((book) => (
-                    <SelectItem key={book.id} value={book.id}>{book.title}</SelectItem>
-                  ))
-                ) : (
-                  <SelectItem value="no-books" disabled>Nenhum livro disponível</SelectItem>
-                )}
-                </SelectContent>
-              </Select>
-              {!selectedBookId && (
-                <Alert>
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertTitle>Nenhum livro selecionado</AlertTitle>
-                  <AlertDescription>
-                    Por favor, selecione um livro para iniciar a conversa.
-                  </AlertDescription>
-                </Alert>
-              )}
-              <ScrollArea className="h-80 rounded-md border bg-gray-50">
-                <div className="p-4">
-                  {selectedBookId && conversations[selectedBookId]?.map((msg, index) => (
-                    <div key={index} className={`mb-4 flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`flex items-start space-x-2 max-w-[70%] ${msg.role === 'user' ? 'flex-row-reverse space-x-reverse' : ''}`}>
-                        <div className={`p-2 rounded-full ${msg.role === 'user' ? 'bg-purple-600' : 'bg-gray-300'}`}>
+        {/* Chat Section */}
+        <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+          <div className="bg-[#16d2a4] p-4 flex justify-between items-center">
+            <h2 className="text-xl font-semibold text-white">Bookflows AI</h2>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="bg-white text-[#16d2a4] hover:bg-gray-100" 
+              onClick={startNewConversation}
+              disabled={!selectedBookId}
+            >
+              <PenSquare className="w-4 h-4 mr-2" />
+              Nova conversa
+            </Button>
+          </div>
+          <div className="flex h-[calc(100vh-400px)]">
+            {/* Chat History Sidebar */}
+            <div className="w-64 bg-gray-100 border-r border-gray-200 p-4 overflow-y-auto">
+              <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">Histórico</h3>
+              {conversations.map((conversation) => (
+                <Button 
+                  key={conversation.id} 
+                  variant="ghost" 
+                  className="w-full justify-start text-left mb-1"
+                  onClick={() => selectConversation(conversation)}
+                >
+                  {conversation.title}
+                </Button>
+              ))}
+            </div>
+
+            {/* Chat Area */}
+            <div className="flex-1 flex flex-col">
+              <div className="bg-white p-2 border-b border-gray-200">
+                <Select value={selectedBookId || ''} onValueChange={(value) => setSelectedBookId(value)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Selecione um livro para discutir" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {userBooks.map((book) => (
+                      <SelectItem key={book.id} value={book.id}>{book.title}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <ScrollArea className="flex-1 p-4">
+                <div className="space-y-4">
+                  {currentConversation?.messages.map((msg, index) => (
+                    <div key={index} className={`flex ${msg.role === 'user' ? 'bg-white' : 'bg-gray-50'}`}>
+                      <div className="max-w-3xl mx-auto w-full flex space-x-4 px-4 py-6">
+                        <div className={`p-2 rounded-sm ${msg.role === 'user' ? 'bg-purple-600' : 'bg-[#16d2a4]'}`}>
                           {msg.role === 'user' ? (
-                            <User className="w-5 h-5 text-white" />
+                            <User className="w-6 h-6 text-white" />
                           ) : (
-                            <Brain className="w-5 h-5 text-purple-600" />
+                            <Brain className="w-6 h-6 text-white" />
                           )}
                         </div>
-                        <div className={`p-3 rounded-lg ${msg.role === 'user' ? 'bg-purple-100 text-purple-800' : 'bg-white text-gray-800'}`}>
-                          {msg.content}
+                        <div className="flex-grow">
+                          {msg.role === 'assistant' ? formatAIResponse(msg.content) : <p>{msg.content}</p>}
                         </div>
+                        {msg.role === 'assistant' && (
+                          <div className="flex space-x-2">
+                            <Button variant="ghost" size="icon" className="text-gray-400 hover:text-gray-600">
+                              <Copy className="w-4 h-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="text-gray-400 hover:text-gray-600">
+                              <RotateCcw className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
                 </div>
               </ScrollArea>
-              <div className="space-y-2">
-                <div className="flex space-x-4">
+              <div className="border-t border-gray-200 p-4">
+                <div className="relative">
                   <Textarea
                     ref={messageInputRef}
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder={selectedBookId ? "Pergunte-me qualquer coisa sobre o livro selecionado..." : "Selecione um livro para iniciar a conversa"}
-                    className="flex-grow"
-                    disabled={!selectedBookId || isLimitReached}
+                    placeholder="Envie uma mensagem..."
+                    className="w-full pr-12 resize-none"
+                    rows={1}
+                    disabled={isLimitReached || !selectedBookId}
                   />
                   <Button 
-                    className="bg-purple-600 hover:bg-purple-700 text-white" 
+                    className="absolute right-2 bottom-2 bg-[#16d2a4] hover:bg-[#14b08a] text-white" 
+                    size="sm"
                     onClick={sendMessage}
-                    disabled={isSending || !selectedBookId || isLimitReached}
+                    disabled={isSending || isLimitReached || !selectedBookId}
                   >
                     {isSending ? (
                       <span className="animate-pulse">Enviando...</span>
                     ) : (
-                      <>
-                        <MessageCircle className="w-4 h-4 mr-2" />
-                        Enviar
-                      </>
+                      <Send className="w-4 h-4" />
                     )}
                   </Button>
                 </div>
+                {!selectedBookId && (
+                  <Alert variant="destructive" className="mt-2">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Atenção</AlertTitle>
+                    <AlertDescription>
+                      Selecione um livro para começar a conversar.
+                    </AlertDescription>
+                  </Alert>
+                )}
                 {dailyMessageCount > 0 && (
-                  <p className={`text-sm ${dailyMessageCount >= 90 ? 'text-red-500 font-bold' : 'text-gray-500'}`}>
+                  <p className={`text-xs mt-2 ${dailyMessageCount >= 90 ? 'text-red-500 font-bold' : 'text-gray-500'}`}>
                     {isLimitReached
                       ? "Você atingiu o limite diário de mensagens. Tente novamente amanhã."
                       : `Mensagens enviadas hoje: ${dailyMessageCount}/100`}
@@ -452,8 +534,8 @@ function Dashboard() {
                 )}
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </main>
 
       <Dialog open={modalOpen} onOpenChange={closeModal}>
@@ -477,7 +559,6 @@ function Dashboard() {
                     style={{ objectFit: 'cover' }}
                   />
                 </div>
-                
               </div>
               <div>
                 <h3 className="font-semibold mb-2 text-gray-800">Descrição:</h3>
@@ -519,7 +600,7 @@ function Dashboard() {
             </div>
           )}
           <DialogFooter>
-            <Button className="bg-purple-600 hover:bg-purple-700 text-white">
+            <Button className="bg-[#16d2a4] hover:bg-[#14b08a] text-white">
               <BookOpen className="w-4 h-4 mr-2" />
               Continuar Lendo
             </Button>
@@ -547,7 +628,7 @@ function Dashboard() {
             </div>
           )}
           <DialogFooter className="sm:justify-end">
-            <Button onClick={closeAnnotationModal} className="w-full sm:w-auto">
+            <Button onClick={closeAnnotationModal} className="bg-[#16d2a4] hover:bg-[#14b08a] text-white">
               Fechar
             </Button>
           </DialogFooter>
