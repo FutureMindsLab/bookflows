@@ -630,7 +630,6 @@ const MeusLivros: React.FC = () => {
                   <p className="text-sm text-gray-500">por {livroSelecionado.author}</p>
                   <p className="text-sm text-gray-500">Ano: {livroSelecionado.year}</p>
                   <p className="text-sm text-gray-500">ISBN: {livroSelecionado.isbn}</p>
-                  //<p className="text-sm text-gray-500 mt-2">Progresso: {livroSelecionado.progress}%</p>
                 </div>
               </div>
               <div className="space-y-2">
