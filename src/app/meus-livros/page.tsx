@@ -10,7 +10,7 @@ import { Input } from '../components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog'
 import { Textarea } from '../components/ui/textarea'
-import { Progress } from '../components/ui/progress'
+//import { Progress } from '../components/ui/progress'
 import { Alert, AlertDescription, AlertTitle } from "../components/ui/alert"
 import { ShoppingCart, Headphones, Play, Search, AlertCircle, Trash2 } from 'lucide-react'
 import { useDebounce } from 'use-debounce'
