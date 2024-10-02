@@ -318,8 +318,6 @@ function Dashboard() {
                   <div>
                     <h3 className="text-lg font-semibold">{currentBook.title}</h3>
                     <p className="text-sm text-gray-500">por {currentBook.author}</p>
-                    <Progress value={currentBook.progress} className="mt-2" />
-                    <p className="text-sm text-gray-500 mt-1">{currentBook.progress}% concluído</p>
                   </div>
                 </div>
               </CardContent>
@@ -479,10 +477,7 @@ function Dashboard() {
                     style={{ objectFit: 'cover' }}
                   />
                 </div>
-                <div>
-                  <Progress value={currentBook.progress} className="w-full" />
-                  <p className="text-sm text-gray-500 mt-2">{currentBook.progress}% concluído</p>
-                </div>
+                
               </div>
               <div>
                 <h3 className="font-semibold mb-2 text-gray-800">Descrição:</h3>
