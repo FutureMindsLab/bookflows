@@ -74,6 +74,7 @@ function Dashboard() {
   const [annotationModalOpen, setAnnotationModalOpen] = useState(false)
   const [selectedAnnotation, setSelectedAnnotation] = useState<Annotation | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isChatBlocked, setIsChatBlocked] = useState(true)
   const messageInputRef = useRef<HTMLTextAreaElement>(null)
 
   const fetchUserData = useCallback(async () => {
@@ -141,7 +142,6 @@ function Dashboard() {
       if (formattedBooks.length > 0) {
         setCurrentBook(formattedBooks[0])
         setSelectedBookId(formattedBooks[0].id)
-        startNewConversation(formattedBooks[0].id)
       } else {
         setCurrentBook(null)
         setSelectedBookId(null)
@@ -218,20 +218,38 @@ function Dashboard() {
     }
   }
 
-  const startNewConversation = (bookId: string) => {
-    const book = userBooks.find(book => book.id === bookId)
+  const startNewConversation = async () => {
+    if (!selectedBookId) return
+
+    const book = userBooks.find(book => book.id === selectedBookId)
     if (!book) return
 
     const newConversation: Conversation = {
       id: Date.now().toString(),
       title: `Conversa sobre ${book.title}`,
       messages: [],
-      bookId: bookId,
+      bookId: selectedBookId,
       createdAt: new Date()
     }
     setConversations(prev => [newConversation, ...prev])
     setCurrentConversation(newConversation)
     setMessage('')
+    setIsChatBlocked(false)
+
+    // Send initial AI message
+    const initialMessage = `Olá! Estou aqui para conversar sobre o livro "${book.title}" de ${book.author}. Como posso ajudar você hoje?`
+    await sendInitialMessage(newConversation, initialMessage)
+  }
+
+  const sendInitialMessage = async (conversation: Conversation, content: string) => {
+    const newAiMessage: Message = { role: 'assistant', content }
+    const updatedConversation = {
+      ...conversation,
+      messages: [...conversation.messages, newAiMessage]
+    }
+
+    setCurrentConversation(updatedConversation)
+    setConversations(prev => prev.map(conv => conv.id === updatedConversation.id ? updatedConversation : conv))
   }
 
   const selectConversation = (conversation: Conversation) => {
@@ -391,7 +409,7 @@ function Dashboard() {
                   {recentAnnotations.map((annotation) => (
                     <li 
                       key={annotation.id} 
-                      className="flex items-center space-x-2 cursor-pointer hover:bg-gray-100 p-2 rounded"
+                      className="flex items-center space-x-2 cursor-pointer hover: bg-gray-100 p-2 rounded"
                       onClick={() => openAnnotationModal(annotation)}
                     >
                       <MessageCircle className="w-4 h-4 text-[#16d2a4] flex-shrink-0" />
@@ -413,7 +431,7 @@ function Dashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm">&ldquo;A verdadeira liderança é servir. Liderar é servir. Servir é liderar.&rdquo; - O Monge e o Executivo</p>
+              <p className="text-sm">A verdadeira liderança é servir. Liderar é servir. Servir é liderar. - O Monge e o Executivo</p>
               <Button className="mt-4 w-full bg-purple-600 hover:bg-purple-700 text-white">Obter Mais Insights</Button>
             </CardContent>
           </Card>
@@ -427,7 +445,7 @@ function Dashboard() {
               variant="outline" 
               size="sm" 
               className="bg-white text-[#16d2a4] hover:bg-gray-100" 
-              onClick={() => selectedBookId && startNewConversation(selectedBookId)}
+              onClick={startNewConversation}
               disabled={!selectedBookId}
             >
               <PenSquare className="w-4 h-4 mr-2" />
@@ -466,8 +484,11 @@ function Dashboard() {
                   value={selectedBookId || ''} 
                   onValueChange={(value) => {
                     setSelectedBookId(value)
-                    startNewConversation(value)
+                    if (!isChatBlocked) {
+                      startNewConversation()
+                    }
                   }}
+                  disabled={isChatBlocked}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Selecione o livro que você quer conversar" />
@@ -519,13 +540,13 @@ function Dashboard() {
                     placeholder="Envie uma mensagem..."
                     className="w-full pr-12 resize-none"
                     rows={1}
-                    disabled={isLimitReached || !selectedBookId}
+                    disabled={isLimitReached || isChatBlocked}
                   />
                   <Button 
                     className="absolute right-2 bottom-2 bg-[#16d2a4] hover:bg-[#14b08a] text-white" 
                     size="sm"
                     onClick={sendMessage}
-                    disabled={isSending || isLimitReached || !selectedBookId}
+                    disabled={isSending || isLimitReached || isChatBlocked}
                   >
                     {isSending ? (
                       <span className="animate-pulse">Enviando...</span>
@@ -534,12 +555,12 @@ function Dashboard() {
                     )}
                   </Button>
                 </div>
-                {!selectedBookId && (
+                {isChatBlocked && (
                   <Alert variant="destructive" className="mt-2">
                     <AlertCircle className="h-4 w-4" />
                     <AlertTitle>Atenção</AlertTitle>
                     <AlertDescription>
-                      Selecione um livro para começar a conversar.
+                      Clique em Nova conversa para começar a conversar com o Bookflows AI.
                     </AlertDescription>
                   </Alert>
                 )}
