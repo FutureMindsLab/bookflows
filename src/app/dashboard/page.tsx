@@ -7,7 +7,7 @@ import Link from 'next/link'
 import Navigation from '@/Components/Navigation'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
-import { MessageCircle, Brain, BookOpen, User, Copy, RotateCcw, Settings, LogOut, PenSquare, Send, ChevronDown, Info } from 'lucide-react'
+import { MessageCircle, Brain, BookOpen, User, Copy, RotateCcw, Settings, LogOut, PenSquare, Send, ChevronDown, Info, MessageSquare } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Textarea } from '../components/ui/textarea'
 import {
@@ -55,6 +55,8 @@ interface Conversation {
   id: string
   title: string
   messages: Message[]
+  bookId: string
+  createdAt: Date
 }
 
 function Dashboard() {
@@ -139,6 +141,7 @@ function Dashboard() {
       if (formattedBooks.length > 0) {
         setCurrentBook(formattedBooks[0])
         setSelectedBookId(formattedBooks[0].id)
+        startNewConversation(formattedBooks[0].id)
       } else {
         setCurrentBook(null)
         setSelectedBookId(null)
@@ -215,11 +218,16 @@ function Dashboard() {
     }
   }
 
-  const startNewConversation = () => {
+  const startNewConversation = (bookId: string) => {
+    const book = userBooks.find(book => book.id === bookId)
+    if (!book) return
+
     const newConversation: Conversation = {
       id: Date.now().toString(),
-      title: 'Nova Conversa',
-      messages: []
+      title: `Conversa sobre ${book.title}`,
+      messages: [],
+      bookId: bookId,
+      createdAt: new Date()
     }
     setConversations(prev => [newConversation, ...prev])
     setCurrentConversation(newConversation)
@@ -228,6 +236,7 @@ function Dashboard() {
 
   const selectConversation = (conversation: Conversation) => {
     setCurrentConversation(conversation)
+    setSelectedBookId(conversation.bookId)
     setMessage('')
   }
 
@@ -262,8 +271,7 @@ function Dashboard() {
       const newAiMessage: Message = { role: 'assistant', content: aiMessage }
       const finalConversation = {
         ...updatedConversation,
-        messages: [...updatedConversation.messages, newAiMessage],
-        title: generateConversationTitle(updatedConversation.messages[0].content)
+        messages: [...updatedConversation.messages, newAiMessage]
       }
 
       setCurrentConversation(finalConversation)
@@ -276,11 +284,6 @@ function Dashboard() {
     } finally {
       setIsSending(false)
     }
-  }
-
-  const generateConversationTitle = (firstMessage: string) => {
-    const words = firstMessage.split(' ').slice(0, 3).join(' ')
-    return words.length > 30 ? words.substring(0, 30) + '...' : words
   }
 
   const updateDailyMessageCount = async () => {
@@ -424,7 +427,7 @@ function Dashboard() {
               variant="outline" 
               size="sm" 
               className="bg-white text-[#16d2a4] hover:bg-gray-100" 
-              onClick={startNewConversation}
+              onClick={() => selectedBookId && startNewConversation(selectedBookId)}
               disabled={!selectedBookId}
             >
               <PenSquare className="w-4 h-4 mr-2" />
@@ -434,25 +437,40 @@ function Dashboard() {
           <div className="flex h-[calc(100vh-400px)]">
             {/* Chat History Sidebar */}
             <div className="w-64 bg-gray-100 border-r border-gray-200 p-4 overflow-y-auto">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">Histórico</h3>
+              <h3 className="text-xs font-semibold text-gray-500 uppercase mb-4">Histórico</h3>
               {conversations.map((conversation) => (
-                <Button 
+                <div 
                   key={conversation.id} 
-                  variant="ghost" 
-                  className="w-full justify-start text-left mb-1"
+                  className={`mb-2 p-2 rounded-lg cursor-pointer transition-colors duration-200 ${
+                    currentConversation?.id === conversation.id 
+                      ? 'bg-[#16d2a4] text-white' 
+                      : 'hover:bg-gray-200'
+                  }`}
                   onClick={() => selectConversation(conversation)}
                 >
-                  {conversation.title}
-                </Button>
+                  <div className="flex items-center space-x-2">
+                    <MessageSquare className="w-4 h-4" />
+                    <span className="text-sm font-medium truncate">{conversation.title}</span>
+                  </div>
+                  <div className="text-xs mt-1 text-gray-500">
+                    {conversation.createdAt.toLocaleString()}
+                  </div>
+                </div>
               ))}
             </div>
 
             {/* Chat Area */}
             <div className="flex-1 flex flex-col">
               <div className="bg-white p-2 border-b border-gray-200">
-                <Select value={selectedBookId || ''} onValueChange={(value) => setSelectedBookId(value)}>
+                <Select 
+                  value={selectedBookId || ''} 
+                  onValueChange={(value) => {
+                    setSelectedBookId(value)
+                    startNewConversation(value)
+                  }}
+                >
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Selecione um livro para discutir" />
+                    <SelectValue placeholder="Selecione o livro que você quer conversar" />
                   </SelectTrigger>
                   <SelectContent>
                     {userBooks.map((book) => (

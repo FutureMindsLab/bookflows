@@ -74,3 +74,27 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Custom styles for the gradient background */
+.bg-gradient {
+  @apply bg-gradient-to-r from-purple-400 via-pink-500 to-red-500;
+}
+
+/* Dark mode styles for the gradient background */
+.dark .bg-gradient {
+  @apply bg-gradient-to-r from-purple-900 via-pink-800 to-red-900;
+}
+
+/* Ensure text is readable on both light and dark backgrounds */
+.text-on-gradient {
+  @apply text-white dark:text-gray-200;
+}
+
+/* Custom styles for buttons */
+.btn-primary {
+  @apply bg-white text-purple-600 px-6 py-3 rounded-md font-semibold hover:bg-gray-100 transition duration-300 dark:bg-gray-800 dark:text-purple-400 dark:hover:bg-gray-700;
+}
+
+.btn-secondary {
+  @apply bg-purple-600 text-white px-6 py-3 rounded-md font-semibold hover:bg-purple-700 transition duration-300 dark:bg-purple-800 dark:hover:bg-purple-900;
+}
