@@ -232,7 +232,7 @@ function Settings() {
                     type="tel"
                     value={profile?.phone || ''}
                     onChange={handlePhoneChange}
-                    placeholder="11955560058"
+                    placeholder="11955550055"
                   />
                   <p className="text-sm text-gray-500">Digite apenas números: DDD + Número (ex: 11955550055)</p>
                 </div>
